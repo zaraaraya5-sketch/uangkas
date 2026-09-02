@@ -158,9 +158,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             <FileSpreadsheet className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-slate-800">Import Data dari Excel (.xlsx / .xlsm)</h3>
+            <h3 className="text-xl font-bold text-slate-800">Import Data dari File Excel (.xlsx)</h3>
             <p className="text-xs text-slate-500">
-              Upload file spreadsheet untuk mencatat data otomatis tanpa perlu ketik manual satu per satu
+              Upload file spreadsheet Excel atau hasil download dari Google Sheets untuk pencatatan otomatis
             </p>
           </div>
         </div>
@@ -205,7 +205,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         {/* Action: Download Template Bar */}
         <div className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 mb-5 shrink-0">
           <div className="text-xs text-emerald-900">
-            <span className="font-bold">Gunakan Format Resmi:</span> Unduh template Excel agar kolom terbaca dengan pas.
+            <span className="font-bold">Template Excel:</span> Unduh template agar susunan kolom sesuai.
           </div>
           <button
             type="button"
@@ -213,7 +213,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-soft transition-all flex items-center gap-1.5 shrink-0"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download Template .XLSX</span>
+            <span>Download Template Excel (.xlsx)</span>
           </button>
         </div>
 
@@ -237,16 +237,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  Klik untuk Upload File Excel atau Drag & Drop
+                  Klik untuk Upload File Excel (.xlsx) atau Drag & Drop
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Mendukung format: <strong className="text-slate-600">.xlsx, .xlsm, .xls, .csv</strong>
+                  Format: <strong className="text-slate-700">Microsoft Excel (.xlsx / .xls)</strong>
+                </p>
+                <p className="text-[11px] text-emerald-600 font-medium mt-1">
+                  * Jika memakai Google Sheets: pilih menu <em>File &gt; Download &gt; Microsoft Excel (.xlsx)</em>
                 </p>
               </div>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx, .xlsm, .xls, .csv"
+                accept=".xlsx, .xls"
                 onChange={handleFileSelect}
                 className="hidden"
               />
