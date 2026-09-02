@@ -237,7 +237,7 @@ export const supabaseDb = {
     const client = getSupabaseClient();
     if (!client) return false;
     try {
-      const { error } = await client.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error } = await client.from('students').delete().not('id', 'is', null);
       if (error) throw error;
       return true;
     } catch (e) {
@@ -394,7 +394,7 @@ export const supabaseDb = {
     const client = getSupabaseClient();
     if (!client) return false;
     try {
-      const { error } = await client.from('payments').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error } = await client.from('payments').delete().not('id', 'is', null);
       if (error) throw error;
       return true;
     } catch (e) {
@@ -552,7 +552,7 @@ export const supabaseDb = {
     const client = getSupabaseClient();
     if (!client) return false;
     try {
-      const { error } = await client.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error } = await client.from('expenses').delete().not('id', 'is', null);
       if (error) throw error;
       return true;
     } catch (e) {

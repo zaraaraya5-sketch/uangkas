@@ -745,22 +745,20 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         duration: 3000,
       });
 
-      // 1. Clean any old duplicated cloud records first to ensure 100% precision
-      await Promise.all([
-        supabaseDb.deleteAllPayments(),
-        supabaseDb.deleteAllExpenses(),
-        supabaseDb.deleteAllStudents(),
-      ]);
+      // 1. Clean any old duplicated cloud records sequentially (child tables first)
+      await supabaseDb.deleteAllPayments();
+      await supabaseDb.deleteAllExpenses();
+      await supabaseDb.deleteAllStudents();
 
       // 2. Upload settings
       await supabaseDb.saveSettings(settings);
 
-      // 3. Upload students
+      // 3. Upload students (parent table first)
       if (students.length > 0) {
         await supabaseDb.insertStudentsBatch(students);
       }
 
-      // 4. Upload payments
+      // 4. Upload payments (child table second)
       if (payments.length > 0) {
         await supabaseDb.insertPaymentsBatch(payments);
       }
