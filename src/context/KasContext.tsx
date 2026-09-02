@@ -13,6 +13,7 @@ import {
   PaymentStatus
 } from '../types';
 import { storageService, RealtimeMessage } from '../services/storageService';
+import { supabaseDb, getSupabaseConfig } from '../services/supabaseClient';
 
 export interface ToastMessage {
   id: string;
@@ -41,6 +42,7 @@ interface KasContextType {
   activeStudentTab: StudentTab;
   toasts: ToastMessage[];
   isRealtimeConnected: boolean;
+  isCloudConnected: boolean;
   lastUpdated: number;
 
   // View Navigation
@@ -58,22 +60,26 @@ interface KasContextType {
   addPaymentsBatch: (payments: Omit<Payment, 'id' | 'createdAt'>[]) => Promise<Payment[]>;
   updatePayment: (id: string, payment: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
+  deleteAllPayments: () => Promise<void>;
 
   // Expense CRUD
   addExpense: (expense: Omit<Expense, 'id' | 'createdAt'>) => Promise<Expense>;
   addExpensesBatch: (expenses: Omit<Expense, 'id' | 'createdAt'>[]) => Promise<Expense[]>;
   updateExpense: (id: string, expense: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  deleteAllExpenses: () => Promise<void>;
 
   // Student CRUD
   addStudent: (student: Omit<Student, 'id' | 'createdAt'>) => Promise<Student>;
   addStudentsBatch: (students: Omit<Student, 'id' | 'createdAt'>[]) => Promise<Student[]>;
   updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
+  deleteAllStudents: () => Promise<void>;
 
-  // Settings
+  // Settings & Sync
   updateSettings: (newSettings: Partial<ClassSettings>) => Promise<void>;
   resetDataToDefault: () => void;
+  syncFromCloud: () => Promise<void>;
 
   // Toasts
   showToast: (toast: Omit<ToastMessage, 'id'>) => void;
@@ -88,10 +94,16 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [expenses, setExpenses] = useState<Expense[]>(() => storageService.getExpenses());
   const [settings, setSettings] = useState<ClassSettings>(() => storageService.getSettings());
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
+  
   const [currentView, setCurrentView] = useState<AppView>(() => {
     const savedView = storageService.getCurrentView() as AppView | null;
-    if (savedView) return savedView;
     const user = storageService.getCurrentUser();
+    if (savedView) {
+      if (savedView === 'admin' && (!user || (user.role !== 'admin' && user.role !== 'ketua_kelas'))) {
+        return 'landing';
+      }
+      return savedView;
+    }
     if (user && (user.role === 'admin' || user.role === 'ketua_kelas')) return 'admin';
     if (user && user.role === 'siswa') return 'student';
     return 'landing';
@@ -102,6 +114,12 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return savedTab || 'dashboard';
   });
 
+  const [activeStudentTab, setActiveStudentTab] = useState<StudentTab>('home');
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
+  const [isRealtimeConnected] = useState<boolean>(true);
+  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(() => getSupabaseConfig().isConnected);
+
   const handleSetCurrentView = useCallback((view: AppView) => {
     setCurrentView(view);
     storageService.saveCurrentView(view);
@@ -111,23 +129,80 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveAdminTab(tab);
     storageService.saveActiveAdminTab(tab);
   }, []);
-  const [activeStudentTab, setActiveStudentTab] = useState<StudentTab>('home');
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(true);
 
-  // Synchronize state from storage whenever a realtime message arrives
+  // Toast functions
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const showToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newToast: ToastMessage = { ...toast, id };
+    setToasts((prev) => [...prev, newToast]);
+
+    const duration = toast.duration || 4000;
+    setTimeout(() => {
+      removeToast(id);
+    }, duration);
+  }, [removeToast]);
+
+  // Synchronize state from storage
   const refreshFromStorage = useCallback(() => {
-    setStudents(storageService.getStudents());
-    setPayments(storageService.getPayments());
-    setExpenses(storageService.getExpenses());
-    setSettings(storageService.getSettings());
+    const stds = storageService.getStudents();
+    const pays = storageService.getPayments();
+    const exps = storageService.getExpenses();
+    const sets = storageService.getSettings();
+    setStudents(stds);
+    setPayments(pays);
+    setExpenses(exps);
+    setSettings(sets);
     setLastUpdated(Date.now());
   }, []);
 
-  // Listen to realtime cross-tab broadcast and local updates
+  // Cloud Sync Handler
+  const syncFromCloud = useCallback(async () => {
+    const config = getSupabaseConfig();
+    setIsCloudConnected(config.isConnected);
+    if (!config.isConnected) return;
+
+    try {
+      const [cloudStudents, cloudPayments, cloudExpenses, cloudSettings] = await Promise.all([
+        supabaseDb.fetchStudents(),
+        supabaseDb.fetchPayments(),
+        supabaseDb.fetchExpenses(),
+        supabaseDb.fetchSettings(),
+      ]);
+
+      if (cloudStudents && cloudStudents.length > 0) {
+        setStudents(cloudStudents);
+        storageService.saveStudents(cloudStudents, false);
+      }
+      if (cloudPayments) {
+        setPayments(cloudPayments);
+        storageService.savePayments(cloudPayments, false);
+      }
+      if (cloudExpenses) {
+        setExpenses(cloudExpenses);
+        storageService.saveExpenses(cloudExpenses, false);
+      }
+      if (cloudSettings) {
+        setSettings(cloudSettings);
+        storageService.saveSettings(cloudSettings, false);
+      }
+      setLastUpdated(Date.now());
+    } catch (e) {
+      console.warn('Cloud sync error:', e);
+    }
+  }, []);
+
+  // Initial cloud fetch on mount
   useEffect(() => {
-    const unsubscribe = storageService.subscribeRealtime((message: RealtimeMessage) => {
+    syncFromCloud();
+  }, [syncFromCloud]);
+
+  // Listen to Supabase Realtime & BroadcastChannel
+  useEffect(() => {
+    const unsubscribeBroadcast = storageService.subscribeRealtime((message: RealtimeMessage) => {
       refreshFromStorage();
       if (message.type === 'PAYMENT_ADDED') {
         showToast({
@@ -144,39 +219,46 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    const unsubscribeSupabase = supabaseDb.subscribeRealtime(() => {
+      syncFromCloud();
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeBroadcast();
+      unsubscribeSupabase();
     };
-  }, [refreshFromStorage]);
-
-  // Toast functions
-  const showToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-    const newToast: ToastMessage = { ...toast, id };
-    setToasts((prev) => [...prev, newToast]);
-
-    const duration = toast.duration || 4000;
-    setTimeout(() => {
-      removeToast(id);
-    }, duration);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  }, [refreshFromStorage, syncFromCloud, showToast]);
 
   // Calculate Student Summaries
   const studentSummaries: StudentSummary[] = useMemo(() => {
-    const target = settings.targetPerStudent || 50000;
+    const target = settings.targetPerStudent || 60000;
 
     return students.map((student) => {
       const studentPayments = payments.filter((p) => p.studentId === student.id);
-      const totalPaid = studentPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-      const remainingAmount = Math.max(0, target - totalPaid);
+      
+      const hasLunasSebelumJuli = studentPayments.some(
+        (p) =>
+          p.description?.toLowerCase().includes('lunas sebelum') ||
+          p.monthName?.toLowerCase().includes('lunas sebelum') ||
+          (Number(p.amount) === 0 && p.description?.toLowerCase().includes('lunas'))
+      );
 
+      const numericPaid = studentPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+      let totalPaid = numericPaid;
+      let remainingAmount = Math.max(0, target - numericPaid);
       let status: PaymentStatus = 'Belum Membayar';
-      if (totalPaid >= target) {
+
+      if (hasLunasSebelumJuli && numericPaid === 0) {
         status = 'Lunas';
+        remainingAmount = 0;
+        totalPaid = target;
+      } else if (totalPaid >= target) {
+        status = 'Lunas';
+        remainingAmount = 0;
+      } else if (hasLunasSebelumJuli) {
+        status = 'Lunas';
+        remainingAmount = 0;
       } else if (totalPaid > 0) {
         status = 'Sebagian';
       }
@@ -197,12 +279,12 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [students, payments, settings.targetPerStudent]);
 
-  // Unified Transactions List (Combined & Sorted)
+  // Unified Transactions List
   const transactions: TransactionItem[] = useMemo(() => {
     const studentMap = new Map(students.map((s) => [s.id, s.name]));
 
     const incomeTransactions: TransactionItem[] = payments.map((p) => {
-      const sName = studentMap.get(p.studentId) || 'Siswa';
+      const sName = studentMap.get(p.studentId) || p.studentName || 'Siswa';
       return {
         id: `tx-pay-${p.id}`,
         type: 'income',
@@ -253,7 +335,6 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unpaidStudentsCount = studentSummaries.filter((s) => s.status === 'Belum Membayar').length;
     const totalStudents = students.length || 45;
     
-    // Students who paid anything (Full or Partial)
     const activeContributors = paidStudentsCount + partialStudentsCount;
     const paymentPercentage = totalStudents > 0 ? (activeContributors / totalStudents) * 100 : 0;
 
@@ -269,7 +350,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [payments, expenses, studentSummaries, students.length]);
 
-  // Real Auth Operations
+  // Auth Operations
   const loginWithCredentials = useCallback((
     usernameOrEmail: string, 
     passwordInput: string, 
@@ -279,7 +360,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanUsername = usernameOrEmail.trim().toLowerCase();
     const cleanPassword = passwordInput.trim();
 
-    // 1. Check Bendahara 1 (Lulu Maulida - lulumaulida1)
+    // 1. Bendahara 1 (Lulu Maulida)
     if (
       cleanUsername === 'bendahara 1' || 
       cleanUsername === 'bendahara1' || 
@@ -303,8 +384,8 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setCurrentUser(targetUser);
       storageService.saveCurrentUser(targetUser);
-      setCurrentView('admin');
-      setActiveAdminTab('dashboard');
+      handleSetCurrentView('admin');
+      handleSetActiveAdminTab('dashboard');
 
       showToast({
         type: 'success',
@@ -314,7 +395,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true };
     }
 
-    // 2. Check Bendahara 2 (Habib Ramadhan - habibramadhan2)
+    // 2. Bendahara 2 (Habib Ramadhan)
     if (
       cleanUsername === 'bendahara 2' || 
       cleanUsername === 'bendahara2' || 
@@ -337,8 +418,8 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setCurrentUser(targetUser);
       storageService.saveCurrentUser(targetUser);
-      setCurrentView('admin');
-      setActiveAdminTab('dashboard');
+      handleSetCurrentView('admin');
+      handleSetActiveAdminTab('dashboard');
 
       showToast({
         type: 'success',
@@ -348,7 +429,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true };
     }
 
-    // 3. Check Admin Kas (Muhammad Rajib Zahir - rajibzahir123)
+    // 3. Admin Kas (Muhammad Rajib Zahir)
     if (
       cleanUsername === 'adminkas' || 
       cleanUsername === 'admin' || 
@@ -371,8 +452,8 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setCurrentUser(targetUser);
       storageService.saveCurrentUser(targetUser);
-      setCurrentView('admin');
-      setActiveAdminTab('dashboard');
+      handleSetCurrentView('admin');
+      handleSetActiveAdminTab('dashboard');
 
       showToast({
         type: 'success',
@@ -382,43 +463,79 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true };
     }
 
-    return { 
-      success: false, 
-      message: 'Username tidak terdaftar. Gunakan "bendahara 1", "bendahara 2", atau "adminkas".' 
-    };
+    // 4. Ketua Kelas (Muhammad Rajib Zahir)
+    if (cleanUsername === 'ketuakelas' || cleanUsername === 'ketua') {
+      if (cleanPassword !== 'password123' && cleanPassword !== 'rajibzahir123') {
+        return { success: false, message: 'Password salah untuk Ketua Kelas.' };
+      }
 
-    // Siswa Login
-    const targetStudent = students.find((s) => s.id === studentId || s.nis === cleanUsername || s.name.toLowerCase() === cleanUsername) || students[5];
-    if (cleanPassword !== 'password123' && cleanPassword !== 'siswa123' && cleanPassword !== '123456') {
-      return { success: false, message: 'Password salah. Silakan coba kembali.' };
+      const targetUser: User = {
+        id: 'user-ketua',
+        name: 'Muhammad Rajib Zahir (Ketua Kelas)',
+        username: 'ketuakelas',
+        email: 'ketua@kaskelas.id',
+        role: 'ketua_kelas',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        createdAt: new Date().toISOString(),
+      };
+
+      setCurrentUser(targetUser);
+      storageService.saveCurrentUser(targetUser);
+      handleSetCurrentView('admin');
+      handleSetActiveAdminTab('dashboard');
+
+      showToast({
+        type: 'success',
+        title: `Selamat datang, ${targetUser.name}!`,
+        message: 'Berhasil masuk ke Dashboard Ketua Kelas.',
+      });
+      return { success: true };
     }
 
-    const targetUser: User = {
-      id: `user-${targetStudent.id}`,
-      name: targetStudent.name,
-      username: targetStudent.nis,
-      email: `${targetStudent.nis}@siswa.kaskelas.id`,
-      role: 'siswa',
-      studentId: targetStudent.id,
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${targetStudent.name}`,
-      createdAt: new Date().toISOString(),
+    // 5. Siswa Login
+    const targetStudent = students.find((s) => s.id === studentId || s.nis === cleanUsername || s.name.toLowerCase() === cleanUsername);
+    if (targetStudent) {
+      if (cleanPassword !== 'password123' && cleanPassword !== 'siswa123' && cleanPassword !== '123456') {
+        return { success: false, message: 'Password salah. Password default siswa: password123' };
+      }
+
+      const targetUser: User = {
+        id: `user-${targetStudent.id}`,
+        name: targetStudent.name,
+        username: targetStudent.nis,
+        email: `${targetStudent.nis}@siswa.kaskelas.id`,
+        role: 'siswa',
+        studentId: targetStudent.id,
+        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${targetStudent.name}`,
+        createdAt: new Date().toISOString(),
+      };
+
+      setCurrentUser(targetUser);
+      storageService.saveCurrentUser(targetUser);
+      handleSetCurrentView('student');
+      setActiveStudentTab('home');
+
+      showToast({
+        type: 'success',
+        title: `Selamat datang, ${targetUser.name}!`,
+        message: 'Berhasil masuk ke Portal Siswa KasKelas.',
+      });
+      return { success: true };
+    }
+
+    return { 
+      success: false, 
+      message: 'Username / NIS tidak terdaftar. Gunakan "bendahara 1", "bendahara 2", "adminkas", atau No. Absen siswa.' 
     };
-
-    setCurrentUser(targetUser);
-    storageService.saveCurrentUser(targetUser);
-    setCurrentView('student');
-    setActiveStudentTab('home');
-
-    showToast({
-      type: 'success',
-      title: `Selamat datang, ${targetUser.name}!`,
-      message: 'Berhasil masuk ke Portal Siswa KasKelas.',
-    });
-    return { success: true };
-  }, [students, showToast]);
+  }, [students, handleSetCurrentView, handleSetActiveAdminTab, showToast]);
 
   const loginAsRole = useCallback((role: Role, studentId?: string) => {
-    loginWithCredentials(role === 'admin' ? 'bendahara' : role === 'ketua_kelas' ? 'ketuakelas' : '24110306', 'password123', role, studentId);
+    loginWithCredentials(
+      role === 'admin' ? 'bendahara' : role === 'ketua_kelas' ? 'ketuakelas' : '1',
+      'password123',
+      role,
+      studentId
+    );
   }, [loginWithCredentials]);
 
   const logout = useCallback(() => {
@@ -433,21 +550,30 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [handleSetCurrentView, handleSetActiveAdminTab, showToast]);
 
-  // Payment CRUD
+  // ----------------------------------------------------
+  // PAYMENT CRUD (Cloud + Local + Realtime)
+  // ----------------------------------------------------
+
   const addPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>): Promise<Payment> => {
-    const newPayment: Payment = {
+    let newPayment: Payment = {
       ...paymentData,
       id: `pay-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     };
 
-    const updated = [newPayment, ...payments];
+    // Attempt Supabase Cloud Insert
+    const cloudResult = await supabaseDb.insertPayment(paymentData);
+    if (cloudResult) {
+      newPayment = cloudResult;
+    }
+
+    const updated = [newPayment, ...payments.filter((p) => p.id !== newPayment.id)];
     setPayments(updated);
     storageService.savePayments(updated, true);
     storageService.broadcastEvent({ type: 'PAYMENT_ADDED', timestamp: Date.now(), payload: newPayment });
 
-    // Check if this payment caused student to reach target
-    const target = settings.targetPerStudent || 50000;
+    // Confetti celebration if target reached
+    const target = settings.targetPerStudent || 25000;
     const studentTotal = updated
       .filter((p) => p.studentId === newPayment.studentId)
       .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -476,11 +602,18 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addPaymentsBatch = async (paymentsData: Omit<Payment, 'id' | 'createdAt'>[]): Promise<Payment[]> => {
     if (paymentsData.length === 0) return [];
-    const newPayments: Payment[] = paymentsData.map((p, idx) => ({
+
+    let newPayments: Payment[] = paymentsData.map((p, idx) => ({
       ...p,
       id: `pay-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     }));
+
+    // Attempt Cloud Batch Insert
+    const cloudResults = await supabaseDb.insertPaymentsBatch(paymentsData);
+    if (cloudResults && cloudResults.length > 0) {
+      newPayments = cloudResults;
+    }
 
     const updated = [...newPayments, ...payments];
     setPayments(updated);
@@ -491,6 +624,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updatePayment = async (id: string, paymentData: Partial<Payment>): Promise<void> => {
+    await supabaseDb.updatePayment(id, paymentData);
     const updated = payments.map((p) => (p.id === id ? { ...p, ...paymentData } : p));
     setPayments(updated);
     storageService.savePayments(updated, true);
@@ -504,6 +638,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deletePayment = async (id: string): Promise<void> => {
+    await supabaseDb.deletePayment(id);
     const updated = payments.filter((p) => p.id !== id);
     setPayments(updated);
     storageService.savePayments(updated, true);
@@ -516,15 +651,36 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Expense CRUD
+  const deleteAllPayments = async (): Promise<void> => {
+    await supabaseDb.deleteAllPayments();
+    setPayments([]);
+    storageService.savePayments([], true);
+    storageService.broadcastEvent({ type: 'PAYMENT_DELETED', timestamp: Date.now() });
+
+    showToast({
+      type: 'warning',
+      title: '✓ Semua riwayat pembayaran telah dihapus',
+      message: 'Seluruh transaksi kas siswa telah dikosongkan.',
+    });
+  };
+
+  // ----------------------------------------------------
+  // EXPENSE CRUD (Cloud + Local + Realtime)
+  // ----------------------------------------------------
+
   const addExpense = async (expenseData: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense> => {
-    const newExpense: Expense = {
+    let newExpense: Expense = {
       ...expenseData,
       id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     };
 
-    const updated = [newExpense, ...expenses];
+    const cloudResult = await supabaseDb.insertExpense(expenseData);
+    if (cloudResult) {
+      newExpense = cloudResult;
+    }
+
+    const updated = [newExpense, ...expenses.filter((e) => e.id !== newExpense.id)];
     setExpenses(updated);
     storageService.saveExpenses(updated, true);
     storageService.broadcastEvent({ type: 'EXPENSE_ADDED', timestamp: Date.now(), payload: newExpense });
@@ -540,11 +696,17 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addExpensesBatch = async (expensesData: Omit<Expense, 'id' | 'createdAt'>[]): Promise<Expense[]> => {
     if (expensesData.length === 0) return [];
-    const newExpenses: Expense[] = expensesData.map((e, idx) => ({
+
+    let newExpenses: Expense[] = expensesData.map((e, idx) => ({
       ...e,
       id: `exp-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     }));
+
+    const cloudResults = await supabaseDb.insertExpensesBatch(expensesData);
+    if (cloudResults && cloudResults.length > 0) {
+      newExpenses = cloudResults;
+    }
 
     const updated = [...newExpenses, ...expenses];
     setExpenses(updated);
@@ -555,6 +717,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateExpense = async (id: string, expenseData: Partial<Expense>): Promise<void> => {
+    await supabaseDb.updateExpense(id, expenseData);
     const updated = expenses.map((e) => (e.id === id ? { ...e, ...expenseData } : e));
     setExpenses(updated);
     storageService.saveExpenses(updated, true);
@@ -568,6 +731,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteExpense = async (id: string): Promise<void> => {
+    await supabaseDb.deleteExpense(id);
     const updated = expenses.filter((e) => e.id !== id);
     setExpenses(updated);
     storageService.saveExpenses(updated, true);
@@ -580,15 +744,36 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Student CRUD
+  const deleteAllExpenses = async (): Promise<void> => {
+    await supabaseDb.deleteAllExpenses();
+    setExpenses([]);
+    storageService.saveExpenses([], true);
+    storageService.broadcastEvent({ type: 'EXPENSE_DELETED', timestamp: Date.now() });
+
+    showToast({
+      type: 'warning',
+      title: '✓ Semua riwayat pengeluaran telah dihapus',
+      message: 'Seluruh belanja kas telah dikosongkan.',
+    });
+  };
+
+  // ----------------------------------------------------
+  // STUDENT CRUD (Cloud + Local + Realtime)
+  // ----------------------------------------------------
+
   const addStudent = async (studentData: Omit<Student, 'id' | 'createdAt'>): Promise<Student> => {
-    const newStudent: Student = {
+    let newStudent: Student = {
       ...studentData,
       id: `std-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     };
 
-    const updated = [...students, newStudent];
+    const cloudResult = await supabaseDb.insertStudent(studentData);
+    if (cloudResult) {
+      newStudent = cloudResult;
+    }
+
+    const updated = [...students.filter((s) => s.id !== newStudent.id), newStudent];
     setStudents(updated);
     storageService.saveStudents(updated, true);
 
@@ -603,20 +788,38 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addStudentsBatch = async (studentsData: Omit<Student, 'id' | 'createdAt'>[]): Promise<Student[]> => {
     if (studentsData.length === 0) return [];
-    const newStudents: Student[] = studentsData.map((s, idx) => ({
+
+    let newStudents: Student[] = studentsData.map((s, idx) => ({
       ...s,
       id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     }));
 
-    const updated = [...students, ...newStudents];
-    setStudents(updated);
-    storageService.saveStudents(updated, true);
+    const cloudResults = await supabaseDb.insertStudentsBatch(studentsData);
+    if (cloudResults && cloudResults.length > 0) {
+      newStudents = cloudResults;
+    }
+
+    // Merge without duplicates by student name
+    const studentMap = new Map<string, Student>();
+    students.forEach((s) => {
+      const key = s.name.toLowerCase().trim();
+      studentMap.set(key, s);
+    });
+    newStudents.forEach((ns) => {
+      const key = ns.name.toLowerCase().trim();
+      studentMap.set(key, ns);
+    });
+    const merged = Array.from(studentMap.values());
+
+    setStudents(merged);
+    storageService.saveStudents(merged, true);
 
     return newStudents;
   };
 
   const updateStudent = async (id: string, studentData: Partial<Student>): Promise<void> => {
+    await supabaseDb.updateStudent(id, studentData);
     const updated = students.map((s) => (s.id === id ? { ...s, ...studentData } : s));
     setStudents(updated);
     storageService.saveStudents(updated, true);
@@ -628,6 +831,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteStudent = async (id: string): Promise<void> => {
+    await supabaseDb.deleteStudent(id);
     const updatedStudents = students.filter((s) => s.id !== id);
     const updatedPayments = payments.filter((p) => p.studentId !== id);
 
@@ -643,9 +847,27 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Settings
+  const deleteAllStudents = async (): Promise<void> => {
+    await supabaseDb.deleteAllStudents();
+    setStudents([]);
+    setPayments([]);
+    storageService.saveStudents([], false);
+    storageService.savePayments([], true);
+
+    showToast({
+      type: 'warning',
+      title: '✓ Seluruh data siswa telah dikosongkan',
+      message: 'Silakan lakukan Import Excel untuk memuat data siswa baru.',
+    });
+  };
+
+  // ----------------------------------------------------
+  // SETTINGS
+  // ----------------------------------------------------
+
   const updateSettings = async (newSettings: Partial<ClassSettings>): Promise<void> => {
     const merged = { ...settings, ...newSettings };
+    await supabaseDb.saveSettings(merged);
     setSettings(merged);
     storageService.saveSettings(merged, true);
 
@@ -681,6 +903,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeStudentTab,
         toasts,
         isRealtimeConnected,
+        isCloudConnected,
         lastUpdated,
 
         setCurrentView: handleSetCurrentView,
@@ -695,19 +918,23 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPaymentsBatch,
         updatePayment,
         deletePayment,
+        deleteAllPayments,
 
         addExpense,
         addExpensesBatch,
         updateExpense,
         deleteExpense,
+        deleteAllExpenses,
 
         addStudent,
         addStudentsBatch,
         updateStudent,
         deleteStudent,
+        deleteAllStudents,
 
         updateSettings,
         resetDataToDefault,
+        syncFromCloud,
 
         showToast,
         removeToast,

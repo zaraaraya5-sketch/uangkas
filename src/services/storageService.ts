@@ -13,16 +13,15 @@ const STORAGE_KEYS = {
   ACTIVE_TAB: 'kk_active_tab_v10',
 };
 
-// Clean legacy bloated keys from localhost storage to free up space
+// Safe purge to only remove massive obsolete temporary garbage without touching app data or Supabase
 function purgeBloat(): void {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return;
     const keysToRemove: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
       const k = window.localStorage.key(i);
-      if (k && !k.startsWith('kk_')) {
-        // Old versions or other projects
-        if (k.startsWith('kaskelas_') || k.startsWith('baraza') || k.length > 50) {
+      if (k && !k.startsWith('kk_') && !k.startsWith('kaskelas_supabase_')) {
+        if (k.startsWith('temp_blob_') || (k.startsWith('baraza_') && k.length > 100)) {
           keysToRemove.push(k);
         }
       }
@@ -197,7 +196,17 @@ export const storageService = {
     if (!raw) return INITIAL_PAYMENTS;
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : INITIAL_PAYMENTS;
+      if (!Array.isArray(parsed)) return INITIAL_PAYMENTS;
+      return parsed.map((p: Payment) => {
+        if (Number(p.amount) === 0 && (p.description?.includes('Belum Bayar') || p.description?.includes('Rp 0'))) {
+          return {
+            ...p,
+            monthName: p.monthName || 'Lunas Sebelum Juli',
+            description: 'Lunas sebelum bulan Juli',
+          };
+        }
+        return p;
+      });
     } catch {
       return INITIAL_PAYMENTS;
     }

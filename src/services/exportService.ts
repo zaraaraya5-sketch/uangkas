@@ -1,10 +1,216 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { StudentSummary, Payment, Expense, TransactionItem, CashOverview, ClassSettings } from '../types';
+import { StudentSummary, Student, Payment, Expense, TransactionItem, CashOverview, ClassSettings } from '../types';
+
+function saveExcelBlob(wb: XLSX.WorkBook, fileName: string): void {
+  try {
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }, 200);
+  } catch (e) {
+    console.error('Error saving export file:', e);
+    XLSX.writeFile(wb, fileName);
+  }
+}
 
 export const exportService = {
-  // Export full financial data to Excel (.xlsx)
+  // 1. Export Khusus Data Siswa (.xlsx)
+  exportStudentsToExcel(students: StudentSummary[] = [], settings: ClassSettings): void {
+    const wb = XLSX.utils.book_new();
+    const rows = students.map((s, idx) => ({
+      'No': idx + 1,
+      'No. Absen / NIS': s.nis,
+      'Nama Siswa': s.name,
+      'Jenis Kelamin': s.gender,
+      'Kelas': s.class,
+      'No. WhatsApp / HP': s.phone || '-',
+      'Target Kas (Rp)': s.targetAmount,
+      'Total Bayar (Rp)': s.totalPaid,
+      'Tunggakan (Rp)': s.remainingAmount,
+      'Status Pembayaran': s.status,
+      'Jumlah Setoran': s.paymentCount,
+      'Setoran Terakhir': s.lastPaymentDate || '-',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ 'Keterangan': 'Tidak ada data siswa' }]);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 16 },
+      { wch: 28 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 18 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa');
+
+    const fileName = `Data_Siswa_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveExcelBlob(wb, fileName);
+  },
+
+  // 2. Export Khusus Pembayaran Kas (.xlsx)
+  exportPaymentsToExcel(payments: Payment[] = [], students: Student[] = [], settings: ClassSettings): void {
+    const wb = XLSX.utils.book_new();
+    const studentMap = new Map(students.map((s) => [s.id, s.name]));
+    const studentNisMap = new Map(students.map((s) => [s.id, s.nis]));
+
+    const rows = payments.map((p, idx) => ({
+      'No': idx + 1,
+      'Tanggal Bayar': p.paymentDate,
+      'No. Absen': studentNisMap.get(p.studentId) || '-',
+      'Nama Siswa': studentMap.get(p.studentId) || p.studentName || 'Siswa',
+      'Nominal (Rp)': p.amount,
+      'Metode Pembayaran': p.paymentMethod,
+      'Bulan / Minggu': p.monthName || (p.weekNumber ? `Minggu ${p.weekNumber}` : '-'),
+      'Keterangan': p.description || '-',
+      'Petugas Penerima': p.createdBy || 'Bendahara',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ 'Keterangan': 'Tidak ada riwayat pembayaran' }]);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 28 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 26 },
+      { wch: 18 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Pemasukan Kas');
+
+    const fileName = `Rekap_Pembayaran_Kas_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveExcelBlob(wb, fileName);
+  },
+
+  // 3. Export Khusus Pengeluaran Kas (.xlsx)
+  exportExpensesToExcel(expenses: Expense[] = [], settings: ClassSettings): void {
+    const wb = XLSX.utils.book_new();
+    const rows = expenses.map((e, idx) => ({
+      'No': idx + 1,
+      'Tanggal Pengeluaran': e.expenseDate,
+      'Nama Pengeluaran / Barang': e.title,
+      'Kategori': e.category,
+      'Nominal (Rp)': e.amount,
+      'Rincian / Keterangan': e.description || '-',
+      'Dicatat Oleh': e.createdBy || 'Bendahara',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ 'Keterangan': 'Tidak ada data pengeluaran' }]);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 30 },
+      { wch: 18 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Pengeluaran Kas');
+
+    const fileName = `Rekap_Pengeluaran_Kas_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveExcelBlob(wb, fileName);
+  },
+
+  // 4. Export Buku Kas Umum & Mutasi Transaksi (.xlsx)
+  exportAllTransactionsToExcel(
+    payments: Payment[] = [],
+    expenses: Expense[] = [],
+    students: Student[] = [],
+    settings: ClassSettings
+  ): void {
+    const wb = XLSX.utils.book_new();
+    const studentMap = new Map(students.map((s) => [s.id, s.name]));
+
+    const allTx: Array<{
+      date: string;
+      type: string;
+      title: string;
+      categoryOrMethod: string;
+      income: number | string;
+      expense: number | string;
+      description: string;
+      officer: string;
+    }> = [];
+
+    payments.forEach((p) => {
+      const sName = studentMap.get(p.studentId) || 'Siswa';
+      allTx.push({
+        date: p.paymentDate,
+        type: 'Pemasukan',
+        title: `Setoran Kas: ${sName}`,
+        categoryOrMethod: p.paymentMethod,
+        income: p.amount,
+        expense: '-',
+        description: p.description || '-',
+        officer: p.createdBy,
+      });
+    });
+
+    expenses.forEach((e) => {
+      allTx.push({
+        date: e.expenseDate,
+        type: 'Pengeluaran',
+        title: e.title,
+        categoryOrMethod: e.category,
+        income: '-',
+        expense: e.amount,
+        description: e.description || '-',
+        officer: e.createdBy,
+      });
+    });
+
+    allTx.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const rows = allTx.map((t, idx) => ({
+      'No': idx + 1,
+      'Tanggal Transaksi': t.date,
+      'Tipe Mutasi': t.type,
+      'Deskripsi / Nama Transaksi': t.title,
+      'Kategori / Metode': t.categoryOrMethod,
+      'Pemasukan (Rp)': t.income,
+      'Pengeluaran (Rp)': t.expense,
+      'Rincian / Keterangan': t.description,
+      'Dicatat Oleh': t.officer,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ 'Keterangan': 'Tidak ada data mutasi kas' }]);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 30 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 30 },
+      { wch: 18 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Buku Kas Umum');
+
+    const fileName = `Buku_Kas_Umum_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveExcelBlob(wb, fileName);
+  },
+
+  // 4. Export Full Financial Report (Excel)
   exportToExcel(
     students: StudentSummary[] = [],
     payments: Payment[] = [],
@@ -15,7 +221,7 @@ export const exportService = {
   ): void {
     const wb = XLSX.utils.book_new();
 
-    // 1. Sheet: Ringkasan
+    // Sheet: Ringkasan
     const summaryData = [
       ['LAPORAN KAS KELAS ' + settings.className],
       ['Tahun Ajaran', settings.academicYear],
@@ -38,121 +244,70 @@ export const exportService = {
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan Kas');
 
-    // 2. Sheet: Data Siswa & Status Pembayaran
-    let wsStudents: XLSX.WorkSheet;
-    if (students.length > 0) {
-      const studentRows = students.map((s, idx) => ({
-        No: idx + 1,
-        'No. Absen': s.nis,
-        'Nama Siswa': s.name,
-        Kelas: s.class,
-        'Target Kas (Rp)': s.targetAmount,
-        'Total Dibayar (Rp)': s.totalPaid,
-        'Tunggakan (Rp)': s.remainingAmount,
-        Status: s.status,
-        'Jumlah Pembayaran': s.paymentCount,
-        'Pembayaran Terakhir': s.lastPaymentDate || '-',
-      }));
-      wsStudents = XLSX.utils.json_to_sheet(studentRows);
-    } else {
-      wsStudents = XLSX.utils.aoa_to_sheet([
-        ['No', 'No. Absen', 'Nama Siswa', 'Kelas', 'Target Kas (Rp)', 'Total Dibayar (Rp)', 'Tunggakan (Rp)', 'Status'],
-        ['-', '-', '(Belum ada data siswa)', settings.className, '0', '0', '0', '-'],
-      ]);
-    }
-    XLSX.utils.book_append_sheet(wb, wsStudents, 'Status Pembayaran Siswa');
+    // Sheet: Data Siswa
+    const studentRows = students.map((s, idx) => ({
+      No: idx + 1,
+      'No. Absen': s.nis,
+      'Nama Siswa': s.name,
+      Kelas: s.class,
+      'Target Kas (Rp)': s.targetAmount,
+      'Total Dibayar (Rp)': s.totalPaid,
+      'Tunggakan (Rp)': s.remainingAmount,
+      Status: s.status,
+      'Jumlah Pembayaran': s.paymentCount,
+      'Pembayaran Terakhir': s.lastPaymentDate || '-',
+    }));
+    const wsStudents = XLSX.utils.json_to_sheet(studentRows.length > 0 ? studentRows : [{ 'Keterangan': 'Belum ada data' }]);
+    XLSX.utils.book_append_sheet(wb, wsStudents, 'Status Siswa');
 
-    // 3. Sheet: Riwayat Pemasukan
-    let wsPayments: XLSX.WorkSheet;
-    if (payments.length > 0) {
-      const paymentRows = payments.map((p, idx) => ({
-        No: idx + 1,
-        Tanggal: p.paymentDate,
-        'ID/Absen Siswa': p.studentId,
-        'Nama Siswa': p.studentName || '-',
-        'Nominal (Rp)': p.amount,
-        Metode: p.paymentMethod,
-        'Bulan / Minggu': p.monthName || '-',
-        Keterangan: p.description,
-        'Dicatat Oleh': p.createdBy,
-      }));
-      wsPayments = XLSX.utils.json_to_sheet(paymentRows);
-    } else {
-      wsPayments = XLSX.utils.aoa_to_sheet([
-        ['No', 'Tanggal', 'Nama Siswa', 'Nominal (Rp)', 'Metode', 'Bulan / Minggu', 'Keterangan'],
-        ['-', '-', '(Belum ada riwayat pembayaran)', '0', 'Tunai', '-', '-'],
-      ]);
-    }
+    // Sheet: Pemasukan
+    const studentMap = new Map(students.map((s) => [s.id, s.name]));
+    const paymentRows = payments.map((p, idx) => ({
+      No: idx + 1,
+      Tanggal: p.paymentDate,
+      'Nama Siswa': studentMap.get(p.studentId) || p.studentName || '-',
+      'Nominal (Rp)': p.amount,
+      Metode: p.paymentMethod,
+      'Bulan / Minggu': p.monthName || '-',
+      Keterangan: p.description,
+      'Dicatat Oleh': p.createdBy,
+    }));
+    const wsPayments = XLSX.utils.json_to_sheet(paymentRows.length > 0 ? paymentRows : [{ 'Keterangan': 'Belum ada pemasukan' }]);
     XLSX.utils.book_append_sheet(wb, wsPayments, 'Pemasukan Kas');
 
-    // 4. Sheet: Riwayat Pengeluaran
-    let wsExpenses: XLSX.WorkSheet;
-    if (expenses.length > 0) {
-      const expenseRows = expenses.map((e, idx) => ({
-        No: idx + 1,
-        Tanggal: e.expenseDate,
-        'Nama Pengeluaran': e.title,
-        Kategori: e.category,
-        'Nominal (Rp)': e.amount,
-        Keterangan: e.description,
-        'Dicatat Oleh': e.createdBy,
-      }));
-      wsExpenses = XLSX.utils.json_to_sheet(expenseRows);
-    } else {
-      wsExpenses = XLSX.utils.aoa_to_sheet([
-        ['No', 'Tanggal', 'Nama Pengeluaran', 'Kategori', 'Nominal (Rp)', 'Keterangan'],
-        ['-', '-', '(Belum ada data pengeluaran)', '-', '0', '-'],
-      ]);
-    }
+    // Sheet: Pengeluaran
+    const expenseRows = expenses.map((e, idx) => ({
+      No: idx + 1,
+      Tanggal: e.expenseDate,
+      'Nama Pengeluaran': e.title,
+      Kategori: e.category,
+      'Nominal (Rp)': e.amount,
+      Keterangan: e.description,
+      'Dicatat Oleh': e.createdBy,
+    }));
+    const wsExpenses = XLSX.utils.json_to_sheet(expenseRows.length > 0 ? expenseRows : [{ 'Keterangan': 'Belum ada pengeluaran' }]);
     XLSX.utils.book_append_sheet(wb, wsExpenses, 'Pengeluaran Kas');
 
-    // 5. Sheet: Semua Transaksi (Buku Kas Umum)
-    let wsTransactions: XLSX.WorkSheet;
-    if (transactions.length > 0) {
-      const transactionRows = transactions.map((t, idx) => ({
-        No: idx + 1,
-        Tanggal: t.date,
-        Tipe: t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
-        Transaksi: t.title,
-        Kategori: t.category || '-',
-        'Nominal (Rp)': t.amount,
-        Metode: t.method || '-',
-        Keterangan: t.description,
-        'Petugas': t.createdBy,
-      }));
-      wsTransactions = XLSX.utils.json_to_sheet(transactionRows);
-    } else {
-      wsTransactions = XLSX.utils.aoa_to_sheet([
-        ['No', 'Tanggal', 'Tipe', 'Transaksi', 'Kategori', 'Nominal (Rp)', 'Keterangan'],
-        ['-', '-', '-', '(Belum ada mutasi transaksi)', '-', '0', '-'],
-      ]);
-    }
+    // Sheet: Buku Kas Umum
+    const transactionRows = transactions.map((t, idx) => ({
+      No: idx + 1,
+      Tanggal: t.date,
+      Tipe: t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+      Transaksi: t.title,
+      Kategori: t.category || '-',
+      'Nominal (Rp)': t.amount,
+      Metode: t.method || '-',
+      Keterangan: t.description,
+      'Petugas': t.createdBy,
+    }));
+    const wsTransactions = XLSX.utils.json_to_sheet(transactionRows.length > 0 ? transactionRows : [{ 'Keterangan': 'Belum ada transaksi' }]);
     XLSX.utils.book_append_sheet(wb, wsTransactions, 'Buku Kas Umum');
 
-    // Write file using Blob anchor to guarantee proper filename and .xlsx extension
     const fileName = `Laporan_Kas_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    try {
-      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([wbout], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
-      });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      }, 200);
-    } catch (e) {
-      console.error('Error saving export file:', e);
-      XLSX.writeFile(wb, fileName);
-    }
+    saveExcelBlob(wb, fileName);
   },
 
-  // Export official PDF report
+  // 5. Export official PDF report
   exportToPDF(
     students: StudentSummary[] = [],
     transactions: TransactionItem[] = [],
@@ -171,7 +326,7 @@ export const exportService = {
     // Header Title
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.setTextColor(12, 140, 233); // Brand color
+    doc.setTextColor(12, 140, 233);
     doc.text(`LAPORAN KAS KELAS ${settings.className}`, 105, 18, { align: 'center' });
 
     doc.setFontSize(10);
@@ -197,13 +352,13 @@ export const exportService = {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.setTextColor(22, 163, 74); // Green
+    doc.setTextColor(22, 163, 74);
     doc.text(formatRupiah(overview.totalIncome), 20, 52);
 
-    doc.setTextColor(220, 38, 38); // Red
+    doc.setTextColor(220, 38, 38);
     doc.text(formatRupiah(overview.totalExpense), 80, 52);
 
-    doc.setTextColor(12, 140, 233); // Blue
+    doc.setTextColor(12, 140, 233);
     doc.text(formatRupiah(overview.currentBalance), 140, 52);
 
     doc.setFontSize(8.5);
@@ -211,7 +366,7 @@ export const exportService = {
     doc.setFont('helvetica', 'normal');
     doc.text(`Status: ${overview.paidStudentsCount}/${overview.totalStudents} Siswa Lunas (${overview.paymentPercentage.toFixed(0)}%)`, 20, 60);
 
-    // Table: Transaksi Terbaru / Kas
+    // Table: Transaksi
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(30, 41, 59);

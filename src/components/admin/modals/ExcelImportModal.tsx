@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useKas } from '../../../context/KasContext';
 import { Student, Payment, Expense } from '../../../types';
 import { excelImportService, ParsedPaymentResult } from '../../../services/excelImportService';
@@ -49,6 +49,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Sync defaultType when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setActiveType(defaultType);
+      handleReset();
+    }
+  }, [isOpen, defaultType]);
+
   if (!isOpen) return null;
 
   const handleReset = () => {
@@ -79,7 +87,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       if (activeType === 'student') {
         const data = await excelImportService.parseStudentFile(selectedFile, settings.className);
         if (data.length === 0) {
-          setErrorMsg('Tidak ditemukan data siswa yang valid di file Excel ini.');
+          setErrorMsg('Tidak ditemukan data siswa yang valid di file Excel ini. Pastikan format kolom sesuai template.');
         } else {
           setParsedStudents(data);
         }
@@ -124,18 +132,25 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         showToast({
           type: 'success',
           title: '✓ Import Siswa Berhasil',
-          message: `${parsedStudents.length} siswa berhasil ditambahkan ke kelas.`,
+          message: `${parsedStudents.length} siswa berhasil ditambahkan ke kelas dan tersinkronisasi.`,
         });
       } else if (activeType === 'payment' && parsedPaymentData) {
         const { autoCreatedStudents, payments, previewRows } = parsedPaymentData;
         
         // 1. Batch create any students who are not registered yet
         const studentIdMap = new Map<string, string>();
+        students.forEach((s) => {
+          studentIdMap.set(s.name.toLowerCase().trim(), s.id);
+          studentIdMap.set(s.name.toLowerCase().replace(/[^a-z0-9]/g, ''), s.id);
+          studentIdMap.set(s.nis, s.id);
+        });
+
         if (autoCreatedStudents.length > 0) {
           const createdStudents = await addStudentsBatch(autoCreatedStudents);
           createdStudents.forEach((cs) => {
+            studentIdMap.set(cs.name.toLowerCase().trim(), cs.id);
+            studentIdMap.set(cs.name.toLowerCase().replace(/[^a-z0-9]/g, ''), cs.id);
             studentIdMap.set(cs.nis, cs.id);
-            studentIdMap.set(cs.name.toLowerCase(), cs.id);
           });
         }
 
@@ -144,8 +159,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         for (const p of payments) {
           let finalStudentId = p.studentId;
           if (p.studentId.startsWith('sim-std-')) {
-            const matchedAbsen = p.studentId.split('-')[2];
-            const realId = studentIdMap.get(matchedAbsen) || students.find((s) => s.nis === matchedAbsen)?.id;
+            const rawPart = p.studentId.split('-')[2] || '';
+            const decodedName = decodeURIComponent(rawPart).toLowerCase().trim();
+            const cleanName = decodedName.replace(/[^a-z0-9]/g, '');
+            const realId = studentIdMap.get(decodedName) || studentIdMap.get(cleanName);
             if (realId) {
               finalStudentId = realId;
             }
@@ -163,8 +180,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
         showToast({
           type: 'success',
-          title: '✓ Import Berhasil & Terhubung',
-          message: `${previewRows.length} data siswa diproses (${autoCreatedStudents.length} siswa baru terdaftar, ${finalPaymentsToSave.length} transaksi kas dicatat).`,
+          title: '✓ Import Kas Berhasil',
+          message: `${previewRows.length} baris data diproses (${autoCreatedStudents.length} siswa baru terdaftar, ${finalPaymentsToSave.length} transaksi kas dicatat).`,
         });
       } else if (activeType === 'expense' && parsedExpenses.length > 0) {
         await addExpensesBatch(parsedExpenses);
@@ -190,6 +207,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     (activeType === 'payment' && (parsedPaymentData?.previewRows?.length || 0) > 0) ||
     (activeType === 'expense' && parsedExpenses.length > 0);
 
+  const getTitle = () => {
+    if (activeType === 'student') return 'Import Data Siswa (.xlsx)';
+    if (activeType === 'payment') return 'Import Pembayaran Kas (.xlsx)';
+    return 'Import Pengeluaran Kas (.xlsx)';
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-soft-xl border border-slate-100 animate-scale-in relative max-h-[90vh] flex flex-col">
@@ -206,7 +229,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             <FileSpreadsheet className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-slate-800">Import Data dari File Excel (.xlsx)</h3>
+            <h3 className="text-xl font-bold text-slate-800">{getTitle()}</h3>
             <p className="text-xs text-slate-500">
               Upload file spreadsheet Excel atau Google Sheets untuk pencatatan otomatis
             </p>
@@ -253,7 +276,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         {/* Action: Download Template Bar */}
         <div className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 mb-5 shrink-0">
           <div className="text-xs text-emerald-900">
-            <span className="font-bold">Template Excel:</span> Unduh template agar susunan kolom sesuai.
+            <span className="font-bold">Template Excel:</span> Unduh template agar kolom sesuai.
           </div>
           <button
             type="button"
@@ -261,7 +284,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-soft transition-all flex items-center gap-1.5 shrink-0"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download Template Excel (.xlsx)</span>
+            <span>Download Template ({activeType === 'student' ? 'Siswa' : activeType === 'payment' ? 'Kas' : 'Pengeluaran'})</span>
           </button>
         </div>
 
@@ -291,7 +314,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   Format: <strong className="text-slate-700">Microsoft Excel (.xlsx / .xls)</strong>
                 </p>
                 <p className="text-[11px] text-emerald-600 font-medium mt-1">
-                  * Otomatis membaca nomor absen, nama siswa, dan nominal kas/tunggakan (termasuk Rp 0)
+                  * Otomatis membaca kolom dan nomor absen
                 </p>
               </div>
               <input
@@ -397,7 +420,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                               {r.amount > 0 ? (
                                 <span className="text-emerald-600">{formatRupiah(r.amount)}</span>
                               ) : (
-                                <span className="text-slate-400 font-normal">Rp 0 (Belum Bayar)</span>
+                                <span className="text-emerald-700 font-medium">Rp 0 (Lunas sebelum Juli)</span>
                               )}
                             </td>
                             <td className="py-1.5 px-3">
@@ -406,8 +429,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                                   Tercatat
                                 </span>
                               ) : (
-                                <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 font-semibold rounded-full border border-amber-200">
-                                  Rp 0
+                                <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded-full border border-emerald-200 flex items-center gap-1 w-fit">
+                                  <span>✓</span>
+                                  <span>Lunas</span>
                                 </span>
                               )}
                             </td>

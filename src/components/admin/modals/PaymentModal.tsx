@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useKas } from '../../../context/KasContext';
 import { Payment, PaymentMethod } from '../../../types';
-import { X, Wallet, Calendar, DollarSign, FileText, Clock, AlertCircle } from 'lucide-react';
+import { X, Wallet, Calendar, DollarSign, FileText, Clock, AlertCircle, Sparkles } from 'lucide-react';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -10,6 +10,8 @@ interface PaymentModalProps {
 }
 
 const MONTH_OPTIONS = [
+  'Lunas sebelum bulan Juli',
+  'Juli - September (Menunggu Pelunasan Tunggakan)',
   'Juli',
   'Agustus',
   'September',
@@ -61,7 +63,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setPaymentMethod(editPayment.paymentMethod);
       setPaymentDate(editPayment.paymentDate);
       setMonthName(editPayment.monthName || 'Juli');
-      setDescription(editPayment.description);
+      
+      // Clean old "(Rp 0 / Belum Bayar)" text to user's desired "Lunas sebelum bulan Juli"
+      let cleanDesc = editPayment.description || '';
+      if (Number(editPayment.amount) === 0 && (cleanDesc.includes('Belum Bayar') || cleanDesc.includes('Rp 0'))) {
+        cleanDesc = 'Lunas sebelum bulan Juli';
+      }
+      setDescription(cleanDesc);
+
       if (editPayment.monthName?.toLowerCase().includes('minggu') || editPayment.description?.toLowerCase().includes('minggu') || editPayment.description?.toLowerCase().includes('tunggak')) {
         setPaymentCategory('mingguan');
       } else {
@@ -95,7 +104,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handlePeriodChange = (selectedPeriod: string) => {
     setMonthName(selectedPeriod);
-    if (!editPayment) {
+    if (selectedPeriod === 'Lunas sebelum bulan Juli') {
+      setDescription('Lunas sebelum bulan Juli');
+      if (amount === 5000) setAmount(0);
+    } else if (selectedPeriod === 'Juli - September (Menunggu Pelunasan Tunggakan)') {
+      setDescription('Juli-September belum mulai, menunggu pelunasan tunggakan');
+    } else {
       if (paymentCategory === 'bulanan') {
         setDescription(`Kas Bulan ${selectedPeriod}`);
       } else {
@@ -104,12 +118,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     }
   };
 
+  const handleAmountChange = (val: number | string) => {
+    setAmount(val);
+    if (val === 0 || val === '0') {
+      setDescription('Lunas sebelum bulan Juli');
+      setMonthName('Lunas sebelum bulan Juli');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentId) return;
 
     const numAmount = Number(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (isNaN(numAmount) || numAmount < 0) return;
+
+    const finalDesc = description.trim() || (numAmount === 0 ? 'Lunas sebelum bulan Juli' : paymentCategory === 'bulanan' ? `Kas Bulan ${monthName}` : `Kas ${monthName}`);
 
     if (editPayment) {
       await updatePayment(editPayment.id, {
@@ -118,7 +142,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         paymentMethod,
         paymentDate,
         monthName,
-        description: description.trim() || (paymentCategory === 'bulanan' ? `Kas Bulan ${monthName}` : `Kas ${monthName}`),
+        description: finalDesc,
       });
     } else {
       await addPayment({
@@ -127,7 +151,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         paymentMethod,
         paymentDate,
         monthName,
-        description: description.trim() || (paymentCategory === 'bulanan' ? `Kas Bulan ${monthName}` : `Kas ${monthName}`),
+        description: finalDesc,
         createdBy: currentUser?.name || 'Bendahara 1',
       });
     }
@@ -230,16 +254,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <span className="absolute left-3.5 top-2.5 text-xs font-bold text-slate-400">Rp</span>
               <input
                 type="number"
-                min={100}
+                min={0}
                 value={amount}
-                onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="Ketik jumlah uang kas, contoh: 3000, 5000, 10000"
+                onChange={(e) => handleAmountChange(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="Ketik jumlah uang kas, contoh: 0, 3000, 5000, 10000"
                 className="w-full pl-10 pr-4 py-2.5 text-sm font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800"
                 required
               />
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              * Bebas ketik nominal sesuai pembayaran siswa (contoh: 3000 untuk 1 minggu, 5000 untuk 1 bulan, atau nominal pelunasan tunggakan).
+              * Bebas ketik nominal sesuai pembayaran siswa (contoh: 0 jika lunas sebelum Juli, 3000 untuk 1 minggu, 5000 untuk 1 bulan).
             </p>
           </div>
 
@@ -271,7 +295,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {paymentCategory === 'bulanan' ? 'Untuk Bulan' : 'Untuk Minggu / Tunggakan'}
+                {paymentCategory === 'bulanan' ? 'Untuk Periode / Bulan' : 'Untuk Minggu / Tunggakan'}
               </label>
               <select
                 value={monthName}
@@ -302,9 +326,45 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Contoh: Kas Bulan Juli / Bayar Tunggakan Minggu 1-3"
+              placeholder="Contoh: Lunas sebelum bulan Juli / Kas Bulan Juli"
               className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-2.5 bg-slate-50 focus:bg-white focus:outline-none focus:border-emerald-500 text-slate-800"
             />
+            {/* Quick Helper Chips */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDescription('Lunas sebelum bulan Juli');
+                  setMonthName('Lunas sebelum bulan Juli');
+                  setAmount(0);
+                }}
+                className="text-[10px] px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg font-medium transition-colors flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3 text-emerald-600" />
+                <span>Lunas sebelum bulan Juli</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDescription('Juli-September belum mulai uang kas, menunggu pelunasan tunggakan');
+                  setMonthName('Juli - September (Menunggu Pelunasan Tunggakan)');
+                }}
+                className="text-[10px] px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-medium transition-colors"
+              >
+                <span>⏳ Menunggu Pelunasan Tunggakan</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDescription('Kas Bulan Juli');
+                  setMonthName('Juli');
+                  setAmount(5000);
+                }}
+                className="text-[10px] px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
+              >
+                <span>📅 Kas Bulan Juli</span>
+              </button>
+            </div>
           </div>
 
           {/* Footer Buttons */}

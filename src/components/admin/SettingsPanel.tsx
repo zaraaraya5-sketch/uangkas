@@ -19,7 +19,7 @@ import {
 } from '../../services/supabaseClient';
 
 export const SettingsPanel: React.FC = () => {
-  const { settings, updateSettings, resetDataToDefault, showToast } = useKas();
+  const { settings, updateSettings, resetDataToDefault, syncFromCloud, showToast } = useKas();
 
   // Class settings form
   const [className, setClassName] = useState(settings.className);
@@ -64,13 +64,14 @@ export const SettingsPanel: React.FC = () => {
     });
   };
 
-  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
+  const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     saveSupabaseConfig(supabaseUrl, supabaseAnonKey);
+    await syncFromCloud();
     showToast({
       type: 'success',
       title: '✓ Konfigurasi Supabase Tersimpan',
-      message: supabaseUrl ? 'Koneksi database remote telah dikonfigurasi.' : 'Koneksi kembali ke local realtime sync.',
+      message: supabaseUrl ? 'Koneksi database remote telah dikonfigurasi & disinkronkan.' : 'Koneksi kembali ke local realtime sync.',
     });
   };
 
