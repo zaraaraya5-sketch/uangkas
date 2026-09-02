@@ -235,7 +235,12 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = settings.targetPerStudent || 60000;
 
     return students.map((student) => {
-      const studentPayments = payments.filter((p) => p.studentId === student.id);
+      const studentPayments = payments.filter((p) => {
+        if (p.studentId === student.id) return true;
+        if (p.studentId === student.nis) return true;
+        if (p.studentId && p.studentId.includes(encodeURIComponent(student.name))) return true;
+        return false;
+      });
       
       const hasLunasSebelumJuli = studentPayments.some(
         (p) =>

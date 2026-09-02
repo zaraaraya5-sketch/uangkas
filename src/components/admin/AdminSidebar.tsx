@@ -13,7 +13,8 @@ import {
   ShieldCheck, 
   UserCheck, 
   Globe,
-  ExternalLink
+  ExternalLink,
+  X
 } from 'lucide-react';
 
 interface AdminSidebarProps {
@@ -43,13 +44,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpenMobile, onClos
 
   return (
     <aside
-      className={`fixed lg:sticky top-0 left-0 z-40 h-screen w-64 bg-white border-r border-slate-200/90 flex flex-col justify-between transition-transform duration-300 ${
+      className={`fixed lg:sticky top-0 left-0 z-50 h-[100dvh] w-72 max-w-[85vw] bg-white border-r border-slate-200/90 flex flex-col justify-between transition-transform duration-300 shadow-2xl lg:shadow-none ${
         isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}
     >
-      {/* Top: Brand Header */}
-      <div>
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+      {/* Top: Brand Header & Mobile Close */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
           <div
             onClick={() => setCurrentView('landing')}
             className="flex items-center gap-3 cursor-pointer group"
@@ -66,6 +67,17 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpenMobile, onClos
               </span>
             </div>
           </div>
+
+          {/* Close button for Mobile */}
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+              title="Tutup Menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Navigation Menu */}
@@ -100,7 +112,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpenMobile, onClos
         </div>
 
         {/* Public view shortcut */}
-        <div className="px-3 pt-2">
+        <div className="px-3 pt-2 pb-4">
           <button
             onClick={() => setCurrentView('landing')}
             className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium text-slate-500 hover:text-brand-600 hover:bg-slate-50 transition-colors border border-dashed border-slate-200"
@@ -115,7 +127,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpenMobile, onClos
       </div>
 
       {/* Bottom: Profile & Logout */}
-      <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+      <div className="p-4 border-t border-slate-100 bg-slate-50/80 sticky bottom-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
