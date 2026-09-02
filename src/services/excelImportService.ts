@@ -1,8 +1,31 @@
 import * as XLSX from 'xlsx';
 import { Student, Payment, Expense, ExpenseCategory } from '../types';
 
+function saveExcelFile(wb: XLSX.WorkBook, fileName: string): void {
+  try {
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }, 200);
+  } catch (e) {
+    console.error('Error saving excel file:', e);
+    // Fallback to XLSX.writeFile
+    XLSX.writeFile(wb, fileName);
+  }
+}
+
 export const excelImportService = {
-  // 1. Download Template Data Siswa
+  // 1. Download Template Data Siswa (.xlsx)
   downloadStudentTemplate(className = 'XI PPLG 3'): void {
     const wb = XLSX.utils.book_new();
     const headers = [
@@ -19,10 +42,10 @@ export const excelImportService = {
     const ws = XLSX.utils.aoa_to_sheet(headers);
     ws['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 20 }, { wch: 22 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Template Siswa');
-    XLSX.writeFile(wb, `Template_Data_Siswa_${className.replace(/\s+/g, '_')}.xlsx`);
+    saveExcelFile(wb, `Template_Data_Siswa_${className.replace(/\s+/g, '_')}.xlsx`);
   },
 
-  // 2. Download Template Pembayaran Kas
+  // 2. Download Template Pembayaran Kas (.xlsx)
   downloadPaymentTemplate(className = 'XI PPLG 3', students: Student[] = []): void {
     const wb = XLSX.utils.book_new();
     const rows = [
@@ -32,7 +55,7 @@ export const excelImportService = {
     ];
 
     if (students.length > 0) {
-      students.slice(0, 5).forEach((s, idx) => {
+      students.forEach((s, idx) => {
         rows.push([
           s.nis || String(idx + 1),
           s.name,
@@ -50,25 +73,25 @@ export const excelImportService = {
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 22 }, { wch: 20 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Template Pembayaran');
-    XLSX.writeFile(wb, `Template_Pembayaran_Kas_${className.replace(/\s+/g, '_')}.xlsx`);
+    saveExcelFile(wb, `Template_Pembayaran_Kas_${className.replace(/\s+/g, '_')}.xlsx`);
   },
 
-  // 3. Download Template Pengeluaran Kas
+  // 3. Download Template Pengeluaran Kas (.xlsx)
   downloadExpenseTemplate(className = 'XI PPLG 3'): void {
     const wb = XLSX.utils.book_new();
     const rows = [
       ['PETUNJUK: Masukkan pengeluaran kas kelas. Kolom Nama Pengeluaran dan Nominal wajib diisi.'],
       [],
       ['Nama Pengeluaran', 'Nominal (Rp)', 'Kategori', 'Tanggal (YYYY-MM-DD)', 'Keterangan'],
-      ['Spidol & Penghapus Whiteboard', '25000', 'Alat Tulis & Kelas', new Date().toISOString().slice(0, 10), 'Keperluan kelas'],
+      ['Spidol & Penghapus Whiteboard', '25000', 'Keperluan Kelas', new Date().toISOString().slice(0, 10), 'Keperluan kelas'],
       ['Isi Galon Air Minum', '6000', 'Konsumsi', new Date().toISOString().slice(0, 10), 'Air galon'],
-      ['Foto Copy Modul MTK', '46000', 'Kegiatan & Lomba', new Date().toISOString().slice(0, 10), 'Fotocopy tugas'],
+      ['Foto Copy Modul Pelajaran', '46000', 'Acara Kelas', new Date().toISOString().slice(0, 10), 'Fotocopy tugas'],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [{ wch: 30 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Template Pengeluaran');
-    XLSX.writeFile(wb, `Template_Pengeluaran_Kas_${className.replace(/\s+/g, '_')}.xlsx`);
+    saveExcelFile(wb, `Template_Pengeluaran_Kas_${className.replace(/\s+/g, '_')}.xlsx`);
   },
 
   // 4. Parse Student Excel File

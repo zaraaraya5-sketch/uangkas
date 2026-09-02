@@ -95,9 +95,27 @@ export const exportService = {
     const wsTransactions = XLSX.utils.json_to_sheet(transactionRows);
     XLSX.utils.book_append_sheet(wb, wsTransactions, 'Buku Kas Umum');
 
-    // Write file
-    const fileName = `KasKelas_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    // Write file using Blob anchor to guarantee proper filename and .xlsx extension
+    const fileName = `Laporan_Kas_${settings.className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    try {
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 200);
+    } catch (e) {
+      console.error('Error saving export file:', e);
+      XLSX.writeFile(wb, fileName);
+    }
   },
 
   // Export official PDF report
