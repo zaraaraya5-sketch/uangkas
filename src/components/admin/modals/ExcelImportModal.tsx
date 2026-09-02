@@ -1,7 +1,20 @@
 import React, { useState, useRef } from 'react';
 import { useKas } from '../../../context/KasContext';
-import { excelImportService } from '../../../services/excelImportService';
-import { X, FileSpreadsheet, Upload, Download, CheckCircle2, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
+import { Student, Payment, Expense } from '../../../types';
+import { excelImportService, ParsedPaymentResult } from '../../../services/excelImportService';
+import { 
+  FileSpreadsheet, 
+  Upload, 
+  Download, 
+  CheckCircle2, 
+  AlertCircle, 
+  X, 
+  Trash2,
+  Users,
+  Wallet,
+  TrendingDown,
+  Sparkles
+} from 'lucide-react';
 import { formatRupiah } from '../../../utils/formatters';
 
 interface ExcelImportModalProps {
@@ -20,11 +33,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [activeType, setActiveType] = useState<'student' | 'payment' | 'expense'>(defaultType);
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [parsedStudents, setParsedStudents] = useState<any[]>([]);
-  const [parsedPayments, setParsedPayments] = useState<any[]>([]);
-  const [parsedExpenses, setParsedExpenses] = useState<any[]>([]);
-  const [unmatchedCount, setUnmatchedCount] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Parsed data holders
+  const [parsedStudents, setParsedStudents] = useState<Omit<Student, 'id' | 'createdAt'>[]>([]);
+  const [parsedPaymentData, setParsedPaymentData] = useState<ParsedPaymentResult | null>(null);
+  const [parsedExpenses, setParsedExpenses] = useState<Omit<Expense, 'id' | 'createdAt'>[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -33,11 +47,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const handleReset = () => {
     setFile(null);
     setParsedStudents([]);
-    setParsedPayments([]);
+    setParsedPaymentData(null);
     setParsedExpenses([]);
-    setUnmatchedCount(0);
     setErrorMsg(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleTabChange = (type: 'student' | 'payment' | 'expense') => {
@@ -62,12 +77,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           setParsedStudents(data);
         }
       } else if (activeType === 'payment') {
-        const { payments, unmatchedNames } = await excelImportService.parsePaymentFile(selectedFile, students);
-        if (payments.length === 0 && unmatchedNames.length === 0) {
-          setErrorMsg('Tidak ditemukan baris pembayaran kas yang valid.');
+        const result = await excelImportService.parsePaymentFile(selectedFile, students, settings.className);
+        if (result.previewRows.length === 0) {
+          setErrorMsg('Tidak ditemukan baris data siswa / kas yang valid di file Excel ini.');
         } else {
-          setParsedPayments(payments);
-          setUnmatchedCount(unmatchedNames.length);
+          setParsedPaymentData(result);
         }
       } else if (activeType === 'expense') {
         const data = await excelImportService.parseExpenseFile(selectedFile);
@@ -79,7 +93,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       }
     } catch (err: any) {
       console.error(err);
-      setErrorMsg('Gagal membaca file Excel. Pastikan format file adalah .xlsx, .xlsm, atau .csv.');
+      setErrorMsg('Gagal membaca file Excel. Pastikan format file adalah .xlsx atau .xls.');
     } finally {
       setIsLoading(false);
     }
@@ -107,14 +121,40 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           title: '✓ Import Siswa Berhasil',
           message: `${parsedStudents.length} siswa berhasil ditambahkan ke kelas.`,
         });
-      } else if (activeType === 'payment' && parsedPayments.length > 0) {
-        for (const p of parsedPayments) {
-          await addPayment(p);
+      } else if (activeType === 'payment' && parsedPaymentData) {
+        const { autoCreatedStudents, payments, previewRows } = parsedPaymentData;
+        
+        // 1. Auto-create any students who are not registered yet
+        const studentIdMap = new Map<string, string>(); // absen/name -> real student id
+        for (const s of autoCreatedStudents) {
+          const created = await addStudent(s);
+          if (created && created.id) {
+            studentIdMap.set(s.nis, created.id);
+            studentIdMap.set(s.name.toLowerCase(), created.id);
+          }
         }
+
+        // 2. Add payments (linking with real IDs)
+        for (const p of payments) {
+          // If payment studentId was simulated, replace with real student ID
+          let finalStudentId = p.studentId;
+          if (p.studentId.startsWith('sim-std-')) {
+            const matchedAbsen = p.studentId.split('-')[2];
+            const realId = studentIdMap.get(matchedAbsen) || students.find((s) => s.nis === matchedAbsen)?.id;
+            if (realId) {
+              finalStudentId = realId;
+            }
+          }
+          await addPayment({
+            ...p,
+            studentId: finalStudentId,
+          });
+        }
+
         showToast({
           type: 'success',
-          title: '✓ Import Pembayaran Berhasil',
-          message: `${parsedPayments.length} transaksi kas berhasil dicatat.`,
+          title: '✓ Import Berhasil & Terhubung',
+          message: `${previewRows.length} data siswa diproses (${autoCreatedStudents.length} siswa baru ditambahkan, ${payments.length} transaksi kas dicatat).`,
         });
       } else if (activeType === 'expense' && parsedExpenses.length > 0) {
         for (const exp of parsedExpenses) {
@@ -139,7 +179,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   const hasDataToImport =
     (activeType === 'student' && parsedStudents.length > 0) ||
-    (activeType === 'payment' && parsedPayments.length > 0) ||
+    (activeType === 'payment' && (parsedPaymentData?.previewRows?.length || 0) > 0) ||
     (activeType === 'expense' && parsedExpenses.length > 0);
 
   return (
@@ -160,7 +200,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           <div>
             <h3 className="text-xl font-bold text-slate-800">Import Data dari File Excel (.xlsx)</h3>
             <p className="text-xs text-slate-500">
-              Upload file spreadsheet Excel atau hasil download dari Google Sheets untuk pencatatan otomatis
+              Upload file spreadsheet Excel atau Google Sheets untuk pencatatan otomatis
             </p>
           </div>
         </div>
@@ -243,7 +283,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   Format: <strong className="text-slate-700">Microsoft Excel (.xlsx / .xls)</strong>
                 </p>
                 <p className="text-[11px] text-emerald-600 font-medium mt-1">
-                  * Jika memakai Google Sheets: pilih menu <em>File &gt; Download &gt; Microsoft Excel (.xlsx)</em>
+                  * Otomatis membaca nomor absen, nama siswa, dan nominal kas/tunggakan (termasuk Rp 0)
                 </p>
               </div>
               <input
@@ -256,7 +296,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Selected file card */}
+              {/* Selected File Info */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center gap-2.5">
                   <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
@@ -274,7 +314,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 </button>
               </div>
 
-              {/* Live Preview Table */}
+              {/* Live Preview Table - Students */}
               {activeType === 'student' && parsedStudents.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -307,35 +347,62 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 </div>
               )}
 
-              {activeType === 'payment' && parsedPayments.length > 0 && (
+              {/* Live Preview Table - Payments */}
+              {activeType === 'payment' && parsedPaymentData && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold text-slate-700">
-                      Pratinjau Pembayaran ({parsedPayments.length} transaksi siap diimport):
+                      Pratinjau Setoran Kas ({parsedPaymentData.previewRows.length} baris terbaca):
                     </span>
-                    {unmatchedCount > 0 && (
-                      <span className="text-[10px] text-amber-600 font-semibold">
-                        ⚠️ {unmatchedCount} baris dilewati (nama siswa tidak cocok)
+                    {parsedPaymentData.autoCreatedStudents.length > 0 && (
+                      <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-emerald-600" />
+                        {parsedPaymentData.autoCreatedStudents.length} siswa baru otomatis terdaftar
                       </span>
                     )}
                   </div>
-                  <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 text-xs">
+                  <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 text-xs">
                     <table className="w-full text-left">
                       <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 sticky top-0">
                         <tr>
-                          <th className="py-2 px-3">ID Siswa</th>
-                          <th className="py-2 px-3">Nominal</th>
-                          <th className="py-2 px-3">Periode</th>
-                          <th className="py-2 px-3">Tanggal</th>
+                          <th className="py-2 px-3">No. Absen</th>
+                          <th className="py-2 px-3">Nama Siswa</th>
+                          <th className="py-2 px-3">Nominal Bayar</th>
+                          <th className="py-2 px-3">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {parsedPayments.map((p, idx) => (
+                        {parsedPaymentData.previewRows.map((r, idx) => (
                           <tr key={idx} className="hover:bg-slate-50">
-                            <td className="py-1.5 px-3 font-medium text-slate-600">{p.studentId}</td>
-                            <td className="py-1.5 px-3 font-bold text-emerald-600">{formatRupiah(p.amount)}</td>
-                            <td className="py-1.5 px-3">{p.monthName}</td>
-                            <td className="py-1.5 px-3 text-slate-400">{p.paymentDate}</td>
+                            <td className="py-1.5 px-3 font-bold text-slate-700">{r.absen}</td>
+                            <td className="py-1.5 px-3 font-medium text-slate-800">
+                              <div className="flex items-center gap-1.5">
+                                <span>{r.name}</span>
+                                {r.isNewStudent && (
+                                  <span className="text-[9px] px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold">
+                                    Baru
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-1.5 px-3 font-bold">
+                              {r.amount > 0 ? (
+                                <span className="text-emerald-600">{formatRupiah(r.amount)}</span>
+                              ) : (
+                                <span className="text-slate-400 font-normal">Rp 0 (Belum Bayar)</span>
+                              )}
+                            </td>
+                            <td className="py-1.5 px-3">
+                              {r.amount > 0 ? (
+                                <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded-full border border-emerald-200">
+                                  Tercatat
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 font-semibold rounded-full border border-amber-200">
+                                  Rp 0
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -344,6 +411,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 </div>
               )}
 
+              {/* Live Preview Table - Expenses */}
               {activeType === 'expense' && parsedExpenses.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -390,12 +458,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           </button>
           <button
             type="button"
-            disabled={!hasDataToImport || isLoading}
             onClick={handleExecuteImport}
-            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-soft hover:shadow-emerald-200 transition-all flex items-center gap-2"
+            disabled={!hasDataToImport || isLoading}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl text-xs font-bold shadow-soft hover:shadow-emerald-200 transition-all flex items-center gap-2"
           >
-            <span>{isLoading ? 'Memproses...' : 'Proses & Simpan ke Kas'}</span>
-            <ArrowRight className="w-4 h-4" />
+            {isLoading ? (
+              <span>Memproses...</span>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Proses & Simpan ke Kas</span>
+              </>
+            )}
           </button>
         </div>
       </div>
