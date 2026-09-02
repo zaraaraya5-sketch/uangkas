@@ -5,6 +5,9 @@ import { Student, Payment, Expense, ClassSettings } from '../types';
 const SUPABASE_URL_KEY = 'kaskelas_supabase_url';
 const SUPABASE_ANON_KEY = 'kaskelas_supabase_anon_key';
 
+const DEFAULT_SUPABASE_URL = 'https://uuixswhjwgaoyhdafqwn.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1aXhzd2hqd2dhb3loZGFmcXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMjI2OTMsImV4cCI6MjEwMzg5ODY5M30.VIleyECK42P6W3s7CekksFfZgjlgepnwRSpURf1xlq4';
+
 export interface SupabaseConfig {
   url: string;
   anonKey: string;
@@ -15,11 +18,11 @@ export function getSupabaseConfig(): SupabaseConfig {
   let url = '';
   let anonKey = '';
   try {
-    url = localStorage.getItem(SUPABASE_URL_KEY) || import.meta.env.VITE_SUPABASE_URL || '';
-    anonKey = localStorage.getItem(SUPABASE_ANON_KEY) || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    url = localStorage.getItem(SUPABASE_URL_KEY) || import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+    anonKey = localStorage.getItem(SUPABASE_ANON_KEY) || import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
   } catch {
-    url = import.meta.env.VITE_SUPABASE_URL || '';
-    anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+    anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
   }
   return {
     url: url.trim(),

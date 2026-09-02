@@ -10,7 +10,8 @@ import {
   Check, 
   Shield, 
   Zap, 
-  Sliders 
+  Sliders,
+  CloudUpload
 } from 'lucide-react';
 import { 
   getSupabaseConfig, 
@@ -19,7 +20,7 @@ import {
 } from '../../services/supabaseClient';
 
 export const SettingsPanel: React.FC = () => {
-  const { settings, updateSettings, resetDataToDefault, syncFromCloud, showToast } = useKas();
+  const { settings, updateSettings, resetDataToDefault, syncFromCloud, uploadAllToCloud, showToast } = useKas();
 
   // Class settings form
   const [className, setClassName] = useState(settings.className);
@@ -279,17 +280,29 @@ export const SettingsPanel: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
             <p className="text-[11px] text-slate-400">
-              *Aplikasi bekerja secara realtime antar-tab dan window secara default.
+              *Aplikasi bekerja secara realtime antar-tab dan terhubung ke Supabase Cloud.
             </p>
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-soft hover:shadow-emerald-200 transition-all"
-            >
-              <Save className="w-4 h-4" />
-              <span>Simpan Kredensial Supabase</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={uploadAllToCloud}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold transition-all"
+                title="Unggah seluruh data siswa, pembayaran, dan pengeluaran lokal ke Supabase"
+              >
+                <CloudUpload className="w-4 h-4 text-blue-600" />
+                <span>Upload Data ke Cloud</span>
+              </button>
+
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-soft hover:shadow-emerald-200 transition-all"
+              >
+                <Save className="w-4 h-4" />
+                <span>Simpan Kredensial</span>
+              </button>
+            </div>
           </div>
         </form>
 

@@ -80,6 +80,7 @@ interface KasContextType {
   updateSettings: (newSettings: Partial<ClassSettings>) => Promise<void>;
   resetDataToDefault: () => void;
   syncFromCloud: () => Promise<void>;
+  uploadAllToCloud: () => Promise<void>;
 
   // Toasts
   showToast: (toast: Omit<ToastMessage, 'id'>) => void;
@@ -730,6 +731,49 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const uploadAllToCloud = async (): Promise<void> => {
+    try {
+      showToast({
+        type: 'info',
+        title: '⏳ Menyinkronkan data ke Cloud...',
+        message: 'Mengunggah seluruh data lokal ke Supabase database.',
+        duration: 3000,
+      });
+
+      // 1. Upload settings
+      await supabaseDb.saveSettings(settings);
+
+      // 2. Upload students
+      if (students.length > 0) {
+        await supabaseDb.insertStudentsBatch(students);
+      }
+
+      // 3. Upload payments
+      if (payments.length > 0) {
+        await supabaseDb.insertPaymentsBatch(payments);
+      }
+
+      // 4. Upload expenses
+      if (expenses.length > 0) {
+        await supabaseDb.insertExpensesBatch(expenses);
+      }
+
+      showToast({
+        type: 'success',
+        title: '✓ Sukses! Seluruh Data Telah Diunggah ke Cloud',
+        message: 'Data siswa, pembayaran, dan pengeluaran kini aktif di Supabase & Vercel.',
+        duration: 5000,
+      });
+    } catch (e) {
+      console.error('Upload all to cloud error:', e);
+      showToast({
+        type: 'error',
+        title: 'Gagal mengunggah ke Cloud',
+        message: 'Pastikan koneksi Supabase Anda aktif & SQL Table sudah dibuat.',
+      });
+    }
+  };
+
   const deleteExpense = async (id: string): Promise<void> => {
     await supabaseDb.deleteExpense(id);
     const updated = expenses.filter((e) => e.id !== id);
@@ -935,6 +979,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateSettings,
         resetDataToDefault,
         syncFromCloud,
+        uploadAllToCloud,
 
         showToast,
         removeToast,
