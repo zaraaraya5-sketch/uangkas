@@ -116,13 +116,13 @@ export const excelImportService = {
 
     const results: Omit<Student, 'id' | 'createdAt'>[] = [];
 
-    // Find header row
+    // Find header row (ignore petunjuk)
     let headerRowIndex = -1;
     for (let i = 0; i < Math.min(10, rawData.length); i++) {
       const row = rawData[i];
-      if (Array.isArray(row)) {
+      if (Array.isArray(row) && row.length > 1) {
         const rowText = row.map((c) => String(c || '').toLowerCase()).join(' ');
-        if (rowText.includes('nama') || rowText.includes('absen') || rowText.includes('siswa')) {
+        if (!rowText.includes('petunjuk') && (rowText.includes('nama') || rowText.includes('absen') || rowText.includes('siswa'))) {
           headerRowIndex = i;
           break;
         }
@@ -151,11 +151,18 @@ export const excelImportService = {
         absen = String(results.length + 1);
       }
 
-      if (!name || name.toLowerCase().includes('petunjuk') || name.toLowerCase() === 'nama siswa') {
+      // Skip instruction or header rows
+      if (
+        !name || 
+        name.toLowerCase().includes('petunjuk') || 
+        name.toLowerCase() === 'nama siswa' ||
+        name.toLowerCase() === 'nama' ||
+        name.toLowerCase().includes('tunggakan uang kas')
+      ) {
         continue;
       }
 
-      // Remove any numeric prefix like "1. Abyan" -> name: "Abyan", absen: "1"
+      // Remove numeric prefix like "1. Abyan" -> name: "Abyan", absen: "1"
       const matchNumbered = name.match(/^(\d+)[.\s\-=]+(.*)/);
       if (matchNumbered) {
         if (!absen || isNaN(Number(absen))) {
@@ -176,7 +183,7 @@ export const excelImportService = {
     return results;
   },
 
-  // 5. Parse Payment Excel File (Auto detects students and handles 0 nominal gracefully)
+  // 5. Parse Payment Excel File (Handles any format, auto-syncs students, handles Rp 0)
   async parsePaymentFile(
     file: File,
     existingStudents: Student[],
@@ -192,15 +199,19 @@ export const excelImportService = {
     const autoCreatedStudents: Omit<Student, 'id' | 'createdAt'>[] = [];
     const previewRows: ParsedPaymentResult['previewRows'] = [];
 
-    // Track known students (existing + new during this parse)
     const currentStudents = [...existingStudents];
 
+    // Find table header row, excluding any "PETUNJUK" row
     let headerRowIndex = -1;
     for (let i = 0; i < Math.min(10, rawData.length); i++) {
       const row = rawData[i];
-      if (Array.isArray(row)) {
+      if (Array.isArray(row) && row.length > 1) {
         const rowText = row.map((c) => String(c || '').toLowerCase()).join(' ');
-        if (rowText.includes('nominal') || rowText.includes('nama') || rowText.includes('jumlah') || rowText.includes('tunggakan')) {
+        if (
+          !rowText.includes('petunjuk') &&
+          !rowText.includes('data tunggakan') &&
+          (rowText.includes('nominal') || rowText.includes('nama') || rowText.includes('jumlah') || rowText.includes('absen'))
+        ) {
           headerRowIndex = i;
           break;
         }
@@ -215,33 +226,56 @@ export const excelImportService = {
 
       let col0 = String(row[0] || '').trim(); // Absen / No
       let col1 = String(row[1] || '').trim(); // Nama
-      let col2 = String(row[2] || '0').trim(); // Nominal / Tunggakan
+      let col2 = String(row[2] || '').trim(); // Nominal / Tunggakan
       const col3 = String(row[3] || '').trim(); // Tanggal
       const col4 = String(row[4] || '').trim(); // Bulan/Minggu
       const col5 = String(row[5] || '').trim(); // Keterangan
 
-      // Handle single cell format like "1. Abyan = Rp52.000"
+      // Case 1: Single cell format like "1. Abyan = Rp52.000" or "~2. Aisyah = Rp0~"
       if (!col1 && col0.includes('=')) {
-        const parts = col0.split('=');
+        const cleanedCol0 = col0.replace(/~/g, '');
+        const parts = cleanedCol0.split('=');
         col1 = parts[0].trim();
         col2 = parts[1].trim();
       }
 
-      // Check numbered name "1. Abyan"
-      const matchNumbered = col1.match(/^(\d+)[.\s\-=]+(.*)/);
-      if (matchNumbered) {
-        if (!col0 || isNaN(Number(col0))) {
-          col0 = matchNumbered[1];
+      // Case 2: Numbered name in col1 or col0 like "1. Abyan"
+      if (col1) {
+        const matchNumbered = col1.match(/^(\d+)[.\s\-=]+(.*)/);
+        if (matchNumbered) {
+          if (!col0 || isNaN(Number(col0))) {
+            col0 = matchNumbered[1];
+          }
+          col1 = matchNumbered[2].trim();
         }
-        col1 = matchNumbered[2].trim();
+      } else if (col0 && !isNaN(Number(col0)) && row[1]) {
+        col1 = String(row[1]).trim();
+      } else if (col0) {
+        const matchNumbered = col0.match(/^(\d+)[.\s\-=]+(.*)/);
+        if (matchNumbered) {
+          col0 = matchNumbered[1];
+          col1 = matchNumbered[2].trim();
+        }
       }
 
-      if (!col1 || col1.toLowerCase().includes('petunjuk') || col1.toLowerCase() === 'nama siswa') {
+      // Clean strikethrough or special formatting
+      col1 = col1.replace(/~/g, '').trim();
+      col2 = col2.replace(/~/g, '').trim();
+
+      // Skip instruction or header rows
+      if (
+        !col1 ||
+        col1.toLowerCase().includes('petunjuk') ||
+        col1.toLowerCase() === 'nama siswa' ||
+        col1.toLowerCase() === 'nama' ||
+        col1.toLowerCase().includes('tunggakan uang kas') ||
+        col1.toLowerCase().includes('data tunggakan')
+      ) {
         continue;
       }
 
       // Clean nominal
-      const cleanAmount = Number(String(col2).replace(/[^0-9]/g, '')) || 0;
+      const cleanAmount = Number(String(col2 || '0').replace(/[^0-9]/g, '')) || 0;
 
       // Find student in current list
       let matchedStudent = currentStudents.find(
@@ -262,7 +296,6 @@ export const excelImportService = {
         autoCreatedStudents.push(newStudentObj);
         isNewStudent = true;
 
-        // Temporary simulated student record for linking
         const simId = `sim-std-${newAbsen}-${Date.now()}`;
         matchedStudent = {
           ...newStudentObj,
@@ -285,7 +318,6 @@ export const excelImportService = {
         });
       }
 
-      // Add to live preview rows (even with Rp 0)
       previewRows.push({
         absen: col0 || matchedStudent.nis,
         name: col1,
@@ -312,9 +344,9 @@ export const excelImportService = {
     let headerRowIndex = -1;
     for (let i = 0; i < Math.min(10, rawData.length); i++) {
       const row = rawData[i];
-      if (Array.isArray(row)) {
+      if (Array.isArray(row) && row.length > 1) {
         const rowText = row.map((c) => String(c || '').toLowerCase()).join(' ');
-        if (rowText.includes('pengeluaran') || rowText.includes('nominal') || rowText.includes('kategori')) {
+        if (!rowText.includes('petunjuk') && (rowText.includes('pengeluaran') || rowText.includes('nominal') || rowText.includes('kategori'))) {
           headerRowIndex = i;
           break;
         }
@@ -335,7 +367,13 @@ export const excelImportService = {
 
       const cleanAmount = Number(rawAmount.replace(/[^0-9]/g, ''));
       if (!title || !cleanAmount || isNaN(cleanAmount) || cleanAmount <= 0) continue;
-      if (title.toLowerCase().includes('petunjuk') || title.toLowerCase() === 'nama pengeluaran') continue;
+      if (
+        title.toLowerCase().includes('petunjuk') || 
+        title.toLowerCase() === 'nama pengeluaran' ||
+        title.toLowerCase() === 'pengeluaran'
+      ) {
+        continue;
+      }
 
       const cleanCategory: ExpenseCategory = 
         category === 'Keperluan Kelas' || category === 'Peralatan' || category === 'Acara Kelas' || category === 'Konsumsi'

@@ -55,16 +55,19 @@ interface KasContextType {
 
   // Payment CRUD
   addPayment: (payment: Omit<Payment, 'id' | 'createdAt'>) => Promise<Payment>;
+  addPaymentsBatch: (payments: Omit<Payment, 'id' | 'createdAt'>[]) => Promise<Payment[]>;
   updatePayment: (id: string, payment: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
 
   // Expense CRUD
   addExpense: (expense: Omit<Expense, 'id' | 'createdAt'>) => Promise<Expense>;
+  addExpensesBatch: (expenses: Omit<Expense, 'id' | 'createdAt'>[]) => Promise<Expense[]>;
   updateExpense: (id: string, expense: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
 
   // Student CRUD
   addStudent: (student: Omit<Student, 'id' | 'createdAt'>) => Promise<Student>;
+  addStudentsBatch: (students: Omit<Student, 'id' | 'createdAt'>[]) => Promise<Student[]>;
   updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
 
@@ -455,6 +458,22 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newPayment;
   };
 
+  const addPaymentsBatch = async (paymentsData: Omit<Payment, 'id' | 'createdAt'>[]): Promise<Payment[]> => {
+    if (paymentsData.length === 0) return [];
+    const newPayments: Payment[] = paymentsData.map((p, idx) => ({
+      ...p,
+      id: `pay-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString(),
+    }));
+
+    const updated = [...newPayments, ...payments];
+    setPayments(updated);
+    storageService.savePayments(updated, true);
+    storageService.broadcastEvent({ type: 'PAYMENT_ADDED', timestamp: Date.now() });
+
+    return newPayments;
+  };
+
   const updatePayment = async (id: string, paymentData: Partial<Payment>): Promise<void> => {
     const updated = payments.map((p) => (p.id === id ? { ...p, ...paymentData } : p));
     setPayments(updated);
@@ -503,6 +522,22 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newExpense;
   };
 
+  const addExpensesBatch = async (expensesData: Omit<Expense, 'id' | 'createdAt'>[]): Promise<Expense[]> => {
+    if (expensesData.length === 0) return [];
+    const newExpenses: Expense[] = expensesData.map((e, idx) => ({
+      ...e,
+      id: `exp-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString(),
+    }));
+
+    const updated = [...newExpenses, ...expenses];
+    setExpenses(updated);
+    storageService.saveExpenses(updated, true);
+    storageService.broadcastEvent({ type: 'EXPENSE_ADDED', timestamp: Date.now() });
+
+    return newExpenses;
+  };
+
   const updateExpense = async (id: string, expenseData: Partial<Expense>): Promise<void> => {
     const updated = expenses.map((e) => (e.id === id ? { ...e, ...expenseData } : e));
     setExpenses(updated);
@@ -548,6 +583,21 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return newStudent;
+  };
+
+  const addStudentsBatch = async (studentsData: Omit<Student, 'id' | 'createdAt'>[]): Promise<Student[]> => {
+    if (studentsData.length === 0) return [];
+    const newStudents: Student[] = studentsData.map((s, idx) => ({
+      ...s,
+      id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString(),
+    }));
+
+    const updated = [...students, ...newStudents];
+    setStudents(updated);
+    storageService.saveStudents(updated, true);
+
+    return newStudents;
   };
 
   const updateStudent = async (id: string, studentData: Partial<Student>): Promise<void> => {
@@ -626,14 +676,17 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logout,
 
         addPayment,
+        addPaymentsBatch,
         updatePayment,
         deletePayment,
 
         addExpense,
+        addExpensesBatch,
         updateExpense,
         deleteExpense,
 
         addStudent,
+        addStudentsBatch,
         updateStudent,
         deleteStudent,
 

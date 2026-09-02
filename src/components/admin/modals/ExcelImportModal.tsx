@@ -28,7 +28,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onClose,
   defaultType = 'student',
 }) => {
-  const { students, addStudent, addPayment, addExpense, settings, showToast } = useKas();
+  const { 
+    students, 
+    addStudentsBatch, 
+    addPaymentsBatch, 
+    addExpensesBatch, 
+    settings, 
+    showToast 
+  } = useKas();
 
   const [activeType, setActiveType] = useState<'student' | 'payment' | 'expense'>(defaultType);
   const [file, setFile] = useState<File | null>(null);
@@ -113,9 +120,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setIsLoading(true);
     try {
       if (activeType === 'student' && parsedStudents.length > 0) {
-        for (const s of parsedStudents) {
-          await addStudent(s);
-        }
+        await addStudentsBatch(parsedStudents);
         showToast({
           type: 'success',
           title: '✓ Import Siswa Berhasil',
@@ -124,19 +129,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       } else if (activeType === 'payment' && parsedPaymentData) {
         const { autoCreatedStudents, payments, previewRows } = parsedPaymentData;
         
-        // 1. Auto-create any students who are not registered yet
-        const studentIdMap = new Map<string, string>(); // absen/name -> real student id
-        for (const s of autoCreatedStudents) {
-          const created = await addStudent(s);
-          if (created && created.id) {
-            studentIdMap.set(s.nis, created.id);
-            studentIdMap.set(s.name.toLowerCase(), created.id);
-          }
+        // 1. Batch create any students who are not registered yet
+        const studentIdMap = new Map<string, string>();
+        if (autoCreatedStudents.length > 0) {
+          const createdStudents = await addStudentsBatch(autoCreatedStudents);
+          createdStudents.forEach((cs) => {
+            studentIdMap.set(cs.nis, cs.id);
+            studentIdMap.set(cs.name.toLowerCase(), cs.id);
+          });
         }
 
-        // 2. Add payments (linking with real IDs)
+        // 2. Prepare payments linking with real IDs
+        const finalPaymentsToSave: Omit<Payment, 'id' | 'createdAt'>[] = [];
         for (const p of payments) {
-          // If payment studentId was simulated, replace with real student ID
           let finalStudentId = p.studentId;
           if (p.studentId.startsWith('sim-std-')) {
             const matchedAbsen = p.studentId.split('-')[2];
@@ -145,21 +150,24 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               finalStudentId = realId;
             }
           }
-          await addPayment({
+          finalPaymentsToSave.push({
             ...p,
             studentId: finalStudentId,
           });
         }
 
+        // 3. Batch save all payments
+        if (finalPaymentsToSave.length > 0) {
+          await addPaymentsBatch(finalPaymentsToSave);
+        }
+
         showToast({
           type: 'success',
           title: '✓ Import Berhasil & Terhubung',
-          message: `${previewRows.length} data siswa diproses (${autoCreatedStudents.length} siswa baru ditambahkan, ${payments.length} transaksi kas dicatat).`,
+          message: `${previewRows.length} data siswa diproses (${autoCreatedStudents.length} siswa baru terdaftar, ${finalPaymentsToSave.length} transaksi kas dicatat).`,
         });
       } else if (activeType === 'expense' && parsedExpenses.length > 0) {
-        for (const exp of parsedExpenses) {
-          await addExpense(exp);
-        }
+        await addExpensesBatch(parsedExpenses);
         showToast({
           type: 'success',
           title: '✓ Import Pengeluaran Berhasil',
