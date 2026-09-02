@@ -14,6 +14,13 @@ export interface SupabaseConfig {
   isConnected: boolean;
 }
 
+export function cleanSupabaseUrl(rawUrl: string): string {
+  let cleaned = (rawUrl || '').trim();
+  cleaned = cleaned.replace(/\/rest\/v1\/?$/i, '');
+  cleaned = cleaned.replace(/\/+$/, '');
+  return cleaned;
+}
+
 export function getSupabaseConfig(): SupabaseConfig {
   let url = '';
   let anonKey = '';
@@ -24,18 +31,24 @@ export function getSupabaseConfig(): SupabaseConfig {
     url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
     anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
   }
+
+  const cleanedUrl = cleanSupabaseUrl(url);
+  const cleanedKey = (anonKey || '').trim();
+
   return {
-    url: url.trim(),
-    anonKey: anonKey.trim(),
-    isConnected: Boolean(url && anonKey),
+    url: cleanedUrl,
+    anonKey: cleanedKey,
+    isConnected: Boolean(cleanedUrl && cleanedKey),
   };
 }
 
 export function saveSupabaseConfig(url: string, anonKey: string): void {
   try {
-    if (url && anonKey) {
-      localStorage.setItem(SUPABASE_URL_KEY, url.trim());
-      localStorage.setItem(SUPABASE_ANON_KEY, anonKey.trim());
+    const cleanedUrl = cleanSupabaseUrl(url);
+    const cleanedKey = (anonKey || '').trim();
+    if (cleanedUrl && cleanedKey) {
+      localStorage.setItem(SUPABASE_URL_KEY, cleanedUrl);
+      localStorage.setItem(SUPABASE_ANON_KEY, cleanedKey);
     } else {
       localStorage.removeItem(SUPABASE_URL_KEY);
       localStorage.removeItem(SUPABASE_ANON_KEY);
