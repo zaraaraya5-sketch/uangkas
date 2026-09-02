@@ -2,68 +2,125 @@ import { Student, Payment, Expense, User, ClassSettings } from '../types';
 import { INITIAL_STUDENTS, INITIAL_PAYMENTS, INITIAL_EXPENSES, INITIAL_USERS, INITIAL_CLASS_SETTINGS } from '../data/initialData';
 
 const STORAGE_KEYS = {
-  VERSION: 'kaskelas_v9_permanent',
-  STUDENTS: 'kaskelas_students_v9',
-  PAYMENTS: 'kaskelas_payments_v9',
-  EXPENSES: 'kaskelas_expenses_v9',
-  USERS: 'kaskelas_users_v9',
-  SETTINGS: 'kaskelas_settings_v9',
-  CURRENT_USER: 'kaskelas_current_user_v9',
-  CURRENT_VIEW: 'kaskelas_current_view_v9',
-  ACTIVE_TAB: 'kaskelas_active_admin_tab_v9',
+  VERSION: 'kk_v10_db',
+  STUDENTS: 'kk_students_v10',
+  PAYMENTS: 'kk_payments_v10',
+  EXPENSES: 'kk_expenses_v10',
+  USERS: 'kk_users_v10',
+  SETTINGS: 'kk_settings_v10',
+  CURRENT_USER: 'kk_curr_user_v10',
+  CURRENT_VIEW: 'kk_curr_view_v10',
+  ACTIVE_TAB: 'kk_active_tab_v10',
 };
 
-// In-memory fallback memory store (synced with localStorage)
-const memoryStore: Record<string, string> = {
-  [STORAGE_KEYS.STUDENTS]: JSON.stringify(INITIAL_STUDENTS),
-  [STORAGE_KEYS.PAYMENTS]: JSON.stringify(INITIAL_PAYMENTS),
-  [STORAGE_KEYS.EXPENSES]: JSON.stringify(INITIAL_EXPENSES),
-  [STORAGE_KEYS.USERS]: JSON.stringify(INITIAL_USERS),
-  [STORAGE_KEYS.SETTINGS]: JSON.stringify(INITIAL_CLASS_SETTINGS),
-  [STORAGE_KEYS.VERSION]: 'v9_permanent_store',
-};
+// Clean legacy bloated keys from localhost storage to free up space
+function purgeBloat(): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && !k.startsWith('kk_')) {
+        // Old versions or other projects
+        if (k.startsWith('kaskelas_') || k.startsWith('baraza') || k.length > 50) {
+          keysToRemove.push(k);
+        }
+      }
+    }
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch (e) {
+    console.warn('Could not purge bloat:', e);
+  }
+}
 
-// Safe Storage Helper (Reads from localStorage, fallbacks to memory)
-function safeGet(key: string): string | null {
+purgeBloat();
+
+// Memory store in-sync
+const memCache: Record<string, string> = {};
+
+// Open IndexedDB database for permanent backup
+const DB_NAME = 'KasKelasDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'kv_store';
+
+function openDB(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      resolve(null);
+      return;
+    }
+    try {
+      const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// Write to IndexedDB async in background
+async function idbSet(key: string, value: string): Promise<void> {
+  try {
+    const db = await openDB();
+    if (!db) return;
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(value, key);
+  } catch (e) {
+    console.warn('IDB write error:', e);
+  }
+}
+
+// Read from LocalStorage or Memory
+function safeGet(key: string, defaultVal: string = ''): string {
+  if (memCache[key] !== undefined) {
+    return memCache[key];
+  }
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const val = window.localStorage.getItem(key);
       if (val !== null && val !== undefined) {
-        memoryStore[key] = val;
+        memCache[key] = val;
         return val;
       }
     }
   } catch (e) {
-    console.warn('localStorage get failed, falling back to memory:', e);
+    console.warn('safeGet failed:', e);
   }
-  return memoryStore[key] !== undefined ? memoryStore[key] : null;
+  return defaultVal;
 }
 
+// Write to LocalStorage + Memory + IndexedDB
 function safeSet(key: string, value: string): void {
-  memoryStore[key] = value;
+  memCache[key] = value;
+  
+  // 1. Write to localStorage
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.setItem(key, value);
     }
-  } catch (e: any) {
-    console.warn('localStorage set failed, using memory store fallback:', e);
+  } catch (e) {
+    console.warn('localStorage set failed, purging and retrying:', e);
+    purgeBloat();
     try {
-      // If quota issue, clean old legacy versions
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const k = window.localStorage.key(i);
-        if (k && k.startsWith('kaskelas_') && !k.includes('_v9')) {
-          window.localStorage.removeItem(k);
-        }
-      }
       window.localStorage.setItem(key, value);
     } catch {
-      // Memory store is already kept
+      // Memory cache + IDB will preserve it
     }
   }
+
+  // 2. Write to IndexedDB permanently
+  idbSet(key, value);
 }
 
 function safeRemove(key: string): void {
-  delete memoryStore[key];
+  delete memCache[key];
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.removeItem(key);
@@ -71,16 +128,27 @@ function safeRemove(key: string): void {
   } catch {
     // Ignore
   }
+  // Remove from IDB
+  try {
+    openDB().then((db) => {
+      if (db) {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete(key);
+      }
+    });
+  } catch {
+    // Ignore
+  }
 }
 
-// Create a BroadcastChannel for instantaneous cross-tab synchronization
+// Realtime cross-tab broadcast
 let broadcastChannel: BroadcastChannel | null = null;
 try {
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-    broadcastChannel = new BroadcastChannel('kaskelas_realtime_sync');
+    broadcastChannel = new BroadcastChannel('kaskelas_sync_v10');
   }
 } catch (e) {
-  console.warn('BroadcastChannel not supported:', e);
+  console.warn('BroadcastChannel error:', e);
 }
 
 export interface RealtimeMessage {
@@ -92,8 +160,8 @@ export interface RealtimeMessage {
   payload?: any;
 }
 
-// Ensure storage has initial keys once, NEVER overwrite user data on reload
-function initStorageOnce(): void {
+// Load initial data if not present
+function initializeState(): void {
   const version = safeGet(STORAGE_KEYS.VERSION);
   if (!version) {
     safeSet(STORAGE_KEYS.STUDENTS, JSON.stringify(INITIAL_STUDENTS));
@@ -101,18 +169,19 @@ function initStorageOnce(): void {
     safeSet(STORAGE_KEYS.EXPENSES, JSON.stringify(INITIAL_EXPENSES));
     safeSet(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
     safeSet(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_CLASS_SETTINGS));
-    safeSet(STORAGE_KEYS.VERSION, 'v9_permanent_store');
+    safeSet(STORAGE_KEYS.VERSION, 'v10_ready');
   }
 }
 
-initStorageOnce();
+initializeState();
 
 export const storageService = {
   getStudents(): Student[] {
     const raw = safeGet(STORAGE_KEYS.STUDENTS);
     if (!raw) return INITIAL_STUDENTS;
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : INITIAL_STUDENTS;
     } catch {
       return INITIAL_STUDENTS;
     }
@@ -127,7 +196,8 @@ export const storageService = {
     const raw = safeGet(STORAGE_KEYS.PAYMENTS);
     if (!raw) return INITIAL_PAYMENTS;
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : INITIAL_PAYMENTS;
     } catch {
       return INITIAL_PAYMENTS;
     }
@@ -142,7 +212,8 @@ export const storageService = {
     const raw = safeGet(STORAGE_KEYS.EXPENSES);
     if (!raw) return INITIAL_EXPENSES;
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : INITIAL_EXPENSES;
     } catch {
       return INITIAL_EXPENSES;
     }
@@ -201,7 +272,8 @@ export const storageService = {
   },
 
   getCurrentView(): string | null {
-    return safeGet(STORAGE_KEYS.CURRENT_VIEW);
+    const v = safeGet(STORAGE_KEYS.CURRENT_VIEW);
+    return v || null;
   },
 
   saveCurrentView(view: string): void {
@@ -209,7 +281,8 @@ export const storageService = {
   },
 
   getActiveAdminTab(): string | null {
-    return safeGet(STORAGE_KEYS.ACTIVE_TAB);
+    const t = safeGet(STORAGE_KEYS.ACTIVE_TAB);
+    return t || null;
   },
 
   saveActiveAdminTab(tab: string): void {
@@ -221,7 +294,7 @@ export const storageService = {
     safeSet(STORAGE_KEYS.PAYMENTS, JSON.stringify(INITIAL_PAYMENTS));
     safeSet(STORAGE_KEYS.EXPENSES, JSON.stringify(INITIAL_EXPENSES));
     safeSet(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_CLASS_SETTINGS));
-    safeSet(STORAGE_KEYS.VERSION, 'v9_permanent_store');
+    safeSet(STORAGE_KEYS.VERSION, 'v10_ready');
     this.broadcastEvent({ type: 'DATA_RESET', timestamp: Date.now() });
   },
 
