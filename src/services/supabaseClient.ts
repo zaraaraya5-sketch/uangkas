@@ -616,46 +616,52 @@ export const SUPABASE_SQL_SCHEMA = `-- =========================================
 -- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. Students Table
-CREATE TABLE IF NOT EXISTS public.students (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nis VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL,
+-- 2. Clean old conflicting tables if recreating
+DROP TABLE IF EXISTS public.payments CASCADE;
+DROP TABLE IF EXISTS public.expenses CASCADE;
+DROP TABLE IF EXISTS public.students CASCADE;
+DROP TABLE IF EXISTS public.class_settings CASCADE;
+
+-- 3. Students Table (TEXT ID compatible with both UUID & string IDs)
+CREATE TABLE public.students (
+    id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    nis VARCHAR(50) NOT NULL,
+    name VARCHAR(150) NOT NULL,
     class VARCHAR(50) DEFAULT 'XI PPLG 3',
-    gender VARCHAR(5) CHECK (gender IN ('L', 'P')),
-    phone VARCHAR(20),
+    gender VARCHAR(10) DEFAULT 'L',
+    phone VARCHAR(50),
     avatar TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Payments Table
-CREATE TABLE IF NOT EXISTS public.payments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-    amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
-    payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('Tunai', 'Transfer', 'QRIS')),
-    payment_date DATE NOT NULL,
+-- 4. Payments Table (Supports Rp 0 for Lunas Sebelum Juli and TEXT student_id)
+CREATE TABLE public.payments (
+    id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    student_id TEXT NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    payment_method VARCHAR(50) NOT NULL DEFAULT 'Tunai',
+    payment_date VARCHAR(50) NOT NULL,
     week_number INT DEFAULT 1,
     description TEXT,
     created_by VARCHAR(100) DEFAULT 'Bendahara',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Expenses Table
-CREATE TABLE IF NOT EXISTS public.expenses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title VARCHAR(150) NOT NULL,
-    amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
-    category VARCHAR(50) NOT NULL,
-    expense_date DATE NOT NULL,
+-- 5. Expenses Table
+CREATE TABLE public.expenses (
+    id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    title VARCHAR(200) NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    category VARCHAR(50) NOT NULL DEFAULT 'Keperluan Kelas',
+    expense_date VARCHAR(50) NOT NULL,
     description TEXT,
     receipt_url TEXT,
     created_by VARCHAR(100) DEFAULT 'Bendahara',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. Class Settings Table
-CREATE TABLE IF NOT EXISTS public.class_settings (
+-- 6. Class Settings Table
+CREATE TABLE public.class_settings (
     id INT PRIMARY KEY DEFAULT 1,
     class_name VARCHAR(50) DEFAULT 'XI PPLG 3',
     academic_year VARCHAR(20) DEFAULT '2025/2026',
@@ -669,7 +675,7 @@ CREATE TABLE IF NOT EXISTS public.class_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. Enable Realtime on all tables
+-- 7. Enable Realtime on all tables
 ALTER PUBLICATION supabase_realtime ADD TABLE public.students;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.payments;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.expenses;

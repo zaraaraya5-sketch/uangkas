@@ -178,11 +178,11 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setStudents(cloudStudents);
         storageService.saveStudents(cloudStudents, false);
       }
-      if (cloudPayments) {
+      if (cloudPayments && cloudPayments.length > 0) {
         setPayments(cloudPayments);
         storageService.savePayments(cloudPayments, false);
       }
-      if (cloudExpenses) {
+      if (cloudExpenses && cloudExpenses.length > 0) {
         setExpenses(cloudExpenses);
         storageService.saveExpenses(cloudExpenses, false);
       }
