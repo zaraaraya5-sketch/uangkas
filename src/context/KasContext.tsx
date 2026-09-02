@@ -88,14 +88,29 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [expenses, setExpenses] = useState<Expense[]>(() => storageService.getExpenses());
   const [settings, setSettings] = useState<ClassSettings>(() => storageService.getSettings());
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
-  
   const [currentView, setCurrentView] = useState<AppView>(() => {
+    const savedView = storageService.getCurrentView() as AppView | null;
+    if (savedView) return savedView;
     const user = storageService.getCurrentUser();
     if (user && (user.role === 'admin' || user.role === 'ketua_kelas')) return 'admin';
     if (user && user.role === 'siswa') return 'student';
     return 'landing';
   });
-  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('dashboard');
+
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(() => {
+    const savedTab = storageService.getActiveAdminTab() as AdminTab | null;
+    return savedTab || 'dashboard';
+  });
+
+  const handleSetCurrentView = useCallback((view: AppView) => {
+    setCurrentView(view);
+    storageService.saveCurrentView(view);
+  }, []);
+
+  const handleSetActiveAdminTab = useCallback((tab: AdminTab) => {
+    setActiveAdminTab(tab);
+    storageService.saveActiveAdminTab(tab);
+  }, []);
   const [activeStudentTab, setActiveStudentTab] = useState<StudentTab>('home');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
@@ -409,13 +424,14 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = useCallback(() => {
     setCurrentUser(null);
     storageService.saveCurrentUser(null);
-    setCurrentView('landing');
+    handleSetCurrentView('landing');
+    handleSetActiveAdminTab('dashboard');
     showToast({
       type: 'info',
       title: 'Sampai Jumpa!',
       message: 'Anda telah berhasil keluar dari akun KasKelas.',
     });
-  }, [showToast]);
+  }, [handleSetCurrentView, handleSetActiveAdminTab, showToast]);
 
   // Payment CRUD
   const addPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>): Promise<Payment> => {
@@ -667,8 +683,8 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isRealtimeConnected,
         lastUpdated,
 
-        setCurrentView,
-        setActiveAdminTab,
+        setCurrentView: handleSetCurrentView,
+        setActiveAdminTab: handleSetActiveAdminTab,
         setActiveStudentTab,
 
         loginAsRole,
