@@ -158,16 +158,17 @@ export const supabaseDb = {
     if (!client) return null;
     try {
       const payloads = students.map((s) => ({
-        nis: s.nis,
+        id: (s as any).id || undefined,
+        nis: String(s.nis),
         name: s.name,
-        class: s.class,
-        gender: s.gender,
+        class: s.class || 'XI PPLG 3',
+        gender: s.gender || 'L',
         phone: s.phone || '',
         avatar: s.avatar || null,
       }));
       const { data, error } = await client
         .from('students')
-        .upsert(payloads, { onConflict: 'nis' })
+        .upsert(payloads, { onConflict: 'id' })
         .select();
       if (error) throw error;
       return (data || []).map((d: any) => ({
@@ -303,15 +304,19 @@ export const supabaseDb = {
     if (!client) return null;
     try {
       const payloads = payments.map((p) => ({
-        student_id: p.studentId,
-        amount: p.amount,
-        payment_method: p.paymentMethod,
+        id: (p as any).id || undefined,
+        student_id: String(p.studentId),
+        amount: Number(p.amount) || 0,
+        payment_method: p.paymentMethod || 'Tunai',
         payment_date: p.paymentDate,
         week_number: p.weekNumber || 1,
-        description: p.description,
+        description: p.description || '',
         created_by: p.createdBy || 'Bendahara',
       }));
-      const { data, error } = await client.from('payments').insert(payloads).select();
+      const { data, error } = await client
+        .from('payments')
+        .upsert(payloads, { onConflict: 'id' })
+        .select();
       if (error) throw error;
       return (data || []).map((d: any) => ({
         id: String(d.id),
@@ -447,15 +452,19 @@ export const supabaseDb = {
     if (!client) return null;
     try {
       const payloads = expenses.map((e) => ({
+        id: (e as any).id || undefined,
         title: e.title,
-        amount: e.amount,
-        category: e.category,
+        amount: Number(e.amount) || 0,
+        category: e.category || 'Keperluan Kelas',
         expense_date: e.expenseDate,
-        description: e.description,
+        description: e.description || '',
         receipt_url: e.receiptUrl || null,
         created_by: e.createdBy || 'Bendahara',
       }));
-      const { data, error } = await client.from('expenses').insert(payloads).select();
+      const { data, error } = await client
+        .from('expenses')
+        .upsert(payloads, { onConflict: 'id' })
+        .select();
       if (error) throw error;
       return (data || []).map((d: any) => ({
         id: String(d.id),
