@@ -305,18 +305,16 @@ export const excelImportService = {
         currentStudents.push(matchedStudent);
       }
 
-      // If cleanAmount > 0, create a payment transaction
-      if (cleanAmount > 0) {
-        payments.push({
-          studentId: matchedStudent.id,
-          amount: cleanAmount,
-          paymentMethod: 'Tunai',
-          paymentDate: col3 && col3.length === 10 ? col3 : new Date().toISOString().slice(0, 10),
-          monthName: col4 || 'Juli',
-          description: col5 || `Kas ${col4 || 'Bulan Juli'}`,
-          createdBy: 'Import Excel',
-        });
-      }
+      // Create a payment transaction for every student record in the excel (including Rp 0)
+      payments.push({
+        studentId: matchedStudent.id,
+        amount: cleanAmount,
+        paymentMethod: 'Tunai',
+        paymentDate: col3 && col3.length === 10 ? col3 : new Date().toISOString().slice(0, 10),
+        monthName: col4 || 'Juli',
+        description: col5 || (cleanAmount > 0 ? `Kas ${col4 || 'Bulan Juli'}` : `Kas ${col4 || 'Bulan Juli'} (Rp 0 / Belum Bayar)`),
+        createdBy: 'Import Excel',
+      });
 
       previewRows.push({
         absen: col0 || matchedStudent.nis,
