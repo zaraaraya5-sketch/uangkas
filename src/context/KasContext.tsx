@@ -745,20 +745,27 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         duration: 3000,
       });
 
-      // 1. Upload settings
+      // 1. Clean any old duplicated cloud records first to ensure 100% precision
+      await Promise.all([
+        supabaseDb.deleteAllPayments(),
+        supabaseDb.deleteAllExpenses(),
+        supabaseDb.deleteAllStudents(),
+      ]);
+
+      // 2. Upload settings
       await supabaseDb.saveSettings(settings);
 
-      // 2. Upload students
+      // 3. Upload students
       if (students.length > 0) {
         await supabaseDb.insertStudentsBatch(students);
       }
 
-      // 3. Upload payments
+      // 4. Upload payments
       if (payments.length > 0) {
         await supabaseDb.insertPaymentsBatch(payments);
       }
 
-      // 4. Upload expenses
+      // 5. Upload expenses
       if (expenses.length > 0) {
         await supabaseDb.insertExpensesBatch(expenses);
       }
@@ -766,7 +773,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast({
         type: 'success',
         title: '✓ Sukses! Seluruh Data Telah Diunggah ke Cloud',
-        message: 'Data siswa, pembayaran, dan pengeluaran kini aktif di Supabase & Vercel.',
+        message: `${students.length} siswa, ${payments.length} setoran, dan ${expenses.length} pengeluaran kini aktif & bersih di Supabase.`,
         duration: 5000,
       });
     } catch (e) {
