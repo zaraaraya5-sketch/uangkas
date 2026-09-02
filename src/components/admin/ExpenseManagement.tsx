@@ -9,7 +9,8 @@ import {
   Trash2, 
   Calendar, 
   Tag, 
-  FileText 
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import { formatRupiah, formatDate } from '../../utils/formatters';
 import { ExpenseModal } from './modals/ExpenseModal';
@@ -17,9 +18,13 @@ import { ConfirmationModal } from '../common/ConfirmationModal';
 
 interface ExpenseManagementProps {
   onOpenAddModal: () => void;
+  onOpenImportModal?: (type: 'student' | 'payment' | 'expense') => void;
 }
 
-export const ExpenseManagement: React.FC<ExpenseManagementProps> = ({ onOpenAddModal }) => {
+export const ExpenseManagement: React.FC<ExpenseManagementProps> = ({ 
+  onOpenAddModal,
+  onOpenImportModal,
+}) => {
   const { expenses, deleteExpense, currentUser } = useKas();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,15 +79,27 @@ export const ExpenseManagement: React.FC<ExpenseManagementProps> = ({ onOpenAddM
           </p>
         </div>
 
-        {isAdmin && (
-          <button
-            onClick={onOpenAddModal}
-            className="flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-soft hover:shadow-rose-200 transition-all self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Tambah Pengeluaran</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {onOpenImportModal && (
+            <button
+              onClick={() => onOpenImportModal('expense')}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Import Excel</span>
+            </button>
+          )}
+
+          {isAdmin && (
+            <button
+              onClick={onOpenAddModal}
+              className="flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-soft hover:shadow-rose-200 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Tambah Pengeluaran</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Toolbar & Table */}

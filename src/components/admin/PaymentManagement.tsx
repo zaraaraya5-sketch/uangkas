@@ -10,7 +10,8 @@ import {
   Calendar, 
   CreditCard, 
   ArrowDownLeft,
-  Filter
+  Filter,
+  FileSpreadsheet
 } from 'lucide-react';
 import { formatRupiah, formatDate } from '../../utils/formatters';
 import { PaymentModal } from './modals/PaymentModal';
@@ -18,9 +19,13 @@ import { ConfirmationModal } from '../common/ConfirmationModal';
 
 interface PaymentManagementProps {
   onOpenAddModal: () => void;
+  onOpenImportModal?: (type: 'student' | 'payment' | 'expense') => void;
 }
 
-export const PaymentManagement: React.FC<PaymentManagementProps> = ({ onOpenAddModal }) => {
+export const PaymentManagement: React.FC<PaymentManagementProps> = ({ 
+  onOpenAddModal,
+  onOpenImportModal,
+}) => {
   const { payments, students, deletePayment, currentUser } = useKas();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,15 +82,27 @@ export const PaymentManagement: React.FC<PaymentManagementProps> = ({ onOpenAddM
           </p>
         </div>
 
-        {isAdmin && (
-          <button
-            onClick={onOpenAddModal}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-soft hover:shadow-emerald-200 transition-all self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Tambah Pembayaran</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {onOpenImportModal && (
+            <button
+              onClick={() => onOpenImportModal('payment')}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Import Excel</span>
+            </button>
+          )}
+
+          {isAdmin && (
+            <button
+              onClick={onOpenAddModal}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-soft hover:shadow-emerald-200 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Tambah Pembayaran</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Toolbar & Table */}

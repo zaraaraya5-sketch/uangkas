@@ -11,6 +11,7 @@ import { ReportRecap } from './ReportRecap';
 import { SettingsPanel } from './SettingsPanel';
 import { PaymentModal } from './modals/PaymentModal';
 import { ExpenseModal } from './modals/ExpenseModal';
+import { ExcelImportModal } from './modals/ExcelImportModal';
 
 export const AdminDashboard: React.FC = () => {
   const { activeAdminTab } = useKas();
@@ -19,6 +20,13 @@ export const AdminDashboard: React.FC = () => {
   // Quick Action Modal states
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importType, setImportType] = useState<'student' | 'payment' | 'expense'>('student');
+
+  const handleOpenImport = (type: 'student' | 'payment' | 'expense') => {
+    setImportType(type);
+    setIsImportModalOpen(true);
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex">
@@ -55,18 +63,21 @@ export const AdminDashboard: React.FC = () => {
           {activeAdminTab === 'students' && (
             <StudentManagement
               onQuickPayForStudent={() => setIsPaymentModalOpen(true)}
+              onOpenImportModal={handleOpenImport}
             />
           )}
 
           {activeAdminTab === 'payments' && (
             <PaymentManagement
               onOpenAddModal={() => setIsPaymentModalOpen(true)}
+              onOpenImportModal={handleOpenImport}
             />
           )}
 
           {activeAdminTab === 'expenses' && (
             <ExpenseManagement
               onOpenAddModal={() => setIsExpenseModalOpen(true)}
+              onOpenImportModal={handleOpenImport}
             />
           )}
 
@@ -87,6 +98,12 @@ export const AdminDashboard: React.FC = () => {
       <ExpenseModal
         isOpen={isExpenseModalOpen}
         onClose={() => setIsExpenseModalOpen(false)}
+      />
+
+      <ExcelImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        defaultType={importType}
       />
     </div>
   );
