@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenLogin }) => {
                 </span>
               </div>
               <p className="text-[10px] text-slate-600 font-medium tracking-wide">
-                SMK TI REKAYASA PERANGKAT LUNAK
+                SMK NEGERI 1 CIOMAS
               </p>
             </div>
           </div>

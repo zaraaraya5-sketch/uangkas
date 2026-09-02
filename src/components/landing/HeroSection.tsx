@@ -35,7 +35,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 dan Terorganisir.
               </h1>
               <p className="text-lg font-semibold text-brand-600">
-                {settings.className} — SMK Rekayasa Perangkat Lunak & Gim
+                {settings.className} — SMK NEGERI 1 CIOMAS PPLG
               </p>
             </div>
 
