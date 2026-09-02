@@ -59,16 +59,7 @@ export const storageService = {
       return INITIAL_STUDENTS;
     }
     try {
-      const parsed: Student[] = JSON.parse(raw);
-      // Double check if old student "Don Matteu" is still in localStorage or "Nurul Nabilla Arti" is missing
-      const hasDonMatteu = parsed.some((s) => s.name.toLowerCase().includes('don matteu') || s.name.toLowerCase().includes('wewengkang'));
-      const hasNurulNabilla = parsed.some((s) => s.name.toLowerCase().includes('nurul nabilla'));
-      
-      if (hasDonMatteu || !hasNurulNabilla || parsed.length !== 45) {
-        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(INITIAL_STUDENTS));
-        return INITIAL_STUDENTS;
-      }
-      return parsed;
+      return JSON.parse(raw);
     } catch {
       return INITIAL_STUDENTS;
     }
@@ -177,7 +168,7 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(INITIAL_PAYMENTS));
     localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(INITIAL_EXPENSES));
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_CLASS_SETTINGS));
-    localStorage.setItem(STORAGE_KEYS.VERSION, 'v3.1_ciomas');
+    localStorage.setItem(STORAGE_KEYS.VERSION, 'v8.0_clean_manual_slate');
     this.broadcastEvent({ type: 'DATA_RESET', timestamp: Date.now() });
   },
 

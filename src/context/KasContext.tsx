@@ -86,7 +86,12 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [settings, setSettings] = useState<ClassSettings>(() => storageService.getSettings());
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
   
-  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    const user = storageService.getCurrentUser();
+    if (user && (user.role === 'admin' || user.role === 'ketua_kelas')) return 'admin';
+    if (user && user.role === 'siswa') return 'student';
+    return 'landing';
+  });
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('dashboard');
   const [activeStudentTab, setActiveStudentTab] = useState<StudentTab>('home');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
