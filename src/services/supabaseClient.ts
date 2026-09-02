@@ -98,16 +98,25 @@ export const supabaseDb = {
         .order('nis', { ascending: true });
       if (error) throw error;
       if (!data) return [];
-      return data.map((d: any) => ({
-        id: String(d.id),
-        nis: String(d.nis || ''),
-        name: String(d.name || ''),
-        class: String(d.class || 'XI PPLG 3'),
-        gender: d.gender === 'P' ? 'P' : 'L',
-        phone: d.phone || '',
-        avatar: d.avatar || undefined,
-        createdAt: d.created_at || new Date().toISOString(),
-      }));
+      const seen = new Set<string>();
+      const result: Student[] = [];
+      for (const d of data) {
+        const key = (d.name || '').toLowerCase().trim();
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push({
+            id: String(d.id),
+            nis: String(d.nis || ''),
+            name: String(d.name || ''),
+            class: String(d.class || 'XI PPLG 3'),
+            gender: d.gender === 'P' ? 'P' : 'L',
+            phone: d.phone || '',
+            avatar: d.avatar || undefined,
+            createdAt: d.created_at || new Date().toISOString(),
+          });
+        }
+      }
+      return result;
     } catch (e) {
       console.warn('Supabase fetchStudents failed:', e);
       return null;
@@ -248,17 +257,26 @@ export const supabaseDb = {
         .order('payment_date', { ascending: false });
       if (error) throw error;
       if (!data) return [];
-      return data.map((d: any) => ({
-        id: String(d.id),
-        studentId: String(d.student_id),
-        amount: Number(d.amount),
-        paymentMethod: d.payment_method || 'Tunai',
-        paymentDate: d.payment_date,
-        weekNumber: d.week_number || undefined,
-        description: d.description || '',
-        createdBy: d.created_by || 'Bendahara',
-        createdAt: d.created_at || new Date().toISOString(),
-      }));
+      const seen = new Set<string>();
+      const result: Payment[] = [];
+      for (const d of data) {
+        const key = `${d.student_id}_${d.payment_date}_${d.amount}_${(d.description || '').trim()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push({
+            id: String(d.id),
+            studentId: String(d.student_id),
+            amount: Number(d.amount),
+            paymentMethod: d.payment_method || 'Tunai',
+            paymentDate: d.payment_date,
+            weekNumber: d.week_number || undefined,
+            description: d.description || '',
+            createdBy: d.created_by || 'Bendahara',
+            createdAt: d.created_at || new Date().toISOString(),
+          });
+        }
+      }
+      return result;
     } catch (e) {
       console.warn('Supabase fetchPayments failed:', e);
       return null;
@@ -396,17 +414,26 @@ export const supabaseDb = {
         .order('expense_date', { ascending: false });
       if (error) throw error;
       if (!data) return [];
-      return data.map((d: any) => ({
-        id: String(d.id),
-        title: String(d.title),
-        amount: Number(d.amount),
-        category: d.category || 'Lainnya',
-        expenseDate: d.expense_date,
-        description: d.description || '',
-        receiptUrl: d.receipt_url || undefined,
-        createdBy: d.created_by || 'Bendahara',
-        createdAt: d.created_at || new Date().toISOString(),
-      }));
+      const seen = new Set<string>();
+      const result: Expense[] = [];
+      for (const d of data) {
+        const key = `${(d.title || '').trim()}_${d.expense_date}_${d.amount}_${d.category}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push({
+            id: String(d.id),
+            title: String(d.title),
+            amount: Number(d.amount),
+            category: d.category || 'Lainnya',
+            expenseDate: d.expense_date,
+            description: d.description || '',
+            receiptUrl: d.receipt_url || undefined,
+            createdBy: d.created_by || 'Bendahara',
+            createdAt: d.created_at || new Date().toISOString(),
+          });
+        }
+      }
+      return result;
     } catch (e) {
       console.warn('Supabase fetchExpenses failed:', e);
       return null;
