@@ -129,6 +129,7 @@ export const supabaseDb = {
     if (!client) return null;
     try {
       const payload: any = {
+        id: student.id || `std-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         nis: student.nis,
         name: student.name,
         class: student.class,
@@ -136,12 +137,9 @@ export const supabaseDb = {
         phone: student.phone || '',
         avatar: student.avatar || null,
       };
-      if (student.id && !student.id.startsWith('std-') && !student.id.startsWith('sim-')) {
-        payload.id = student.id;
-      }
       const { data, error } = await client
         .from('students')
-        .upsert(payload)
+        .upsert(payload, { onConflict: 'id' })
         .select()
         .single();
       if (error) throw error;
@@ -162,12 +160,12 @@ export const supabaseDb = {
   },
 
   // Batch Insert Students
-  async insertStudentsBatch(students: Omit<Student, 'id' | 'createdAt'>[]): Promise<Student[] | null> {
+  async insertStudentsBatch(students: (Omit<Student, 'id' | 'createdAt'> & { id?: string })[]): Promise<Student[] | null> {
     const client = getSupabaseClient();
     if (!client) return null;
     try {
-      const payloads = students.map((s) => ({
-        id: (s as any).id || undefined,
+      const payloads = students.map((s, idx) => ({
+        id: (s as any).id || `std-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
         nis: String(s.nis),
         name: s.name,
         class: s.class || 'XI PPLG 3',
@@ -284,11 +282,12 @@ export const supabaseDb = {
   },
 
   // Insert Payment
-  async insertPayment(payment: Omit<Payment, 'id' | 'createdAt'>): Promise<Payment | null> {
+  async insertPayment(payment: Omit<Payment, 'id' | 'createdAt'> & { id?: string }): Promise<Payment | null> {
     const client = getSupabaseClient();
     if (!client) return null;
     try {
       const payload: any = {
+        id: payment.id || `pay-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         student_id: payment.studentId,
         amount: payment.amount,
         payment_method: payment.paymentMethod,
@@ -297,7 +296,11 @@ export const supabaseDb = {
         description: payment.description,
         created_by: payment.createdBy || 'Bendahara',
       };
-      const { data, error } = await client.from('payments').insert(payload).select().single();
+      const { data, error } = await client
+        .from('payments')
+        .upsert(payload, { onConflict: 'id' })
+        .select()
+        .single();
       if (error) throw error;
       return {
         id: String(data.id),
@@ -317,12 +320,12 @@ export const supabaseDb = {
   },
 
   // Batch Insert Payments
-  async insertPaymentsBatch(payments: Omit<Payment, 'id' | 'createdAt'>[]): Promise<Payment[] | null> {
+  async insertPaymentsBatch(payments: (Omit<Payment, 'id' | 'createdAt'> & { id?: string })[]): Promise<Payment[] | null> {
     const client = getSupabaseClient();
     if (!client) return null;
     try {
-      const payloads = payments.map((p) => ({
-        id: (p as any).id || undefined,
+      const payloads = payments.map((p, idx) => ({
+        id: (p as any).id || `pay-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
         student_id: String(p.studentId),
         amount: Number(p.amount) || 0,
         payment_method: p.paymentMethod || 'Tunai',
@@ -441,11 +444,12 @@ export const supabaseDb = {
   },
 
   // Insert Expense
-  async insertExpense(expense: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense | null> {
+  async insertExpense(expense: Omit<Expense, 'id' | 'createdAt'> & { id?: string }): Promise<Expense | null> {
     const client = getSupabaseClient();
     if (!client) return null;
     try {
       const payload: any = {
+        id: expense.id || `exp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         title: expense.title,
         amount: expense.amount,
         category: expense.category,
@@ -454,7 +458,11 @@ export const supabaseDb = {
         receipt_url: expense.receiptUrl || null,
         created_by: expense.createdBy || 'Bendahara',
       };
-      const { data, error } = await client.from('expenses').insert(payload).select().single();
+      const { data, error } = await client
+        .from('expenses')
+        .upsert(payload, { onConflict: 'id' })
+        .select()
+        .single();
       if (error) throw error;
       return {
         id: String(data.id),
@@ -474,12 +482,12 @@ export const supabaseDb = {
   },
 
   // Batch Insert Expenses
-  async insertExpensesBatch(expenses: Omit<Expense, 'id' | 'createdAt'>[]): Promise<Expense[] | null> {
+  async insertExpensesBatch(expenses: (Omit<Expense, 'id' | 'createdAt'> & { id?: string })[]): Promise<Expense[] | null> {
     const client = getSupabaseClient();
     if (!client) return null;
     try {
-      const payloads = expenses.map((e) => ({
-        id: (e as any).id || undefined,
+      const payloads = expenses.map((e, idx) => ({
+        id: (e as any).id || `exp-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
         title: e.title,
         amount: Number(e.amount) || 0,
         category: e.category || 'Keperluan Kelas',

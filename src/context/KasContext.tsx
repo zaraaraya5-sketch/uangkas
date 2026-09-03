@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { 
   Student, 
@@ -160,13 +160,17 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastUpdated(Date.now());
   }, []);
 
-  // Cloud Sync Handler
+  const isSyncingRef = useRef(false);
+
+  // Cloud Sync Handler with Auto-Seeding & Bidirectional Sync
   const syncFromCloud = useCallback(async () => {
+    if (isSyncingRef.current) return;
     const config = getSupabaseConfig();
     setIsCloudConnected(config.isConnected);
     if (!config.isConnected) return;
 
     try {
+      isSyncingRef.current = true;
       const [cloudStudents, cloudPayments, cloudExpenses, cloudSettings] = await Promise.all([
         supabaseDb.fetchStudents(),
         supabaseDb.fetchPayments(),
@@ -174,25 +178,50 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseDb.fetchSettings(),
       ]);
 
-      if (cloudStudents && cloudStudents.length > 0) {
+      const cloudHasStudents = Array.isArray(cloudStudents) && cloudStudents.length > 0;
+      const cloudHasPayments = Array.isArray(cloudPayments) && cloudPayments.length > 0;
+      const cloudHasExpenses = Array.isArray(cloudExpenses) && cloudExpenses.length > 0;
+      const cloudHasData = cloudHasStudents || cloudHasPayments || cloudHasExpenses;
+
+      const localStudents = storageService.getStudents();
+      const localPayments = storageService.getPayments();
+      const localExpenses = storageService.getExpenses();
+      const localHasData = localStudents.length > 0 || localPayments.length > 0 || localExpenses.length > 0;
+
+      // SCENARIO 1: Cloud is empty, BUT local device has data (e.g. mobile device with 45 students & transactions)
+      // Automatically upload/seed local device data into Supabase Cloud!
+      if (!cloudHasData && localHasData) {
+        console.log('⚡ Auto-seeding empty cloud database from active local storage data...');
+        await supabaseDb.saveSettings(storageService.getSettings());
+        if (localStudents.length > 0) await supabaseDb.insertStudentsBatch(localStudents);
+        if (localPayments.length > 0) await supabaseDb.insertPaymentsBatch(localPayments);
+        if (localExpenses.length > 0) await supabaseDb.insertExpensesBatch(localExpenses);
+        setLastUpdated(Date.now());
+        return;
+      }
+
+      // SCENARIO 2: Cloud has data (or both empty) -> sync down to local state & storage
+      if (cloudStudents !== null) {
         setStudents(cloudStudents);
         storageService.saveStudents(cloudStudents, false);
       }
-      if (cloudPayments && cloudPayments.length > 0) {
+      if (cloudPayments !== null) {
         setPayments(cloudPayments);
         storageService.savePayments(cloudPayments, false);
       }
-      if (cloudExpenses && cloudExpenses.length > 0) {
+      if (cloudExpenses !== null) {
         setExpenses(cloudExpenses);
         storageService.saveExpenses(cloudExpenses, false);
       }
-      if (cloudSettings) {
+      if (cloudSettings !== null) {
         setSettings(cloudSettings);
         storageService.saveSettings(cloudSettings, false);
       }
       setLastUpdated(Date.now());
     } catch (e) {
       console.warn('Cloud sync error:', e);
+    } finally {
+      isSyncingRef.current = false;
     }
   }, []);
 
@@ -201,7 +230,7 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncFromCloud();
   }, [syncFromCloud]);
 
-  // Listen to Supabase Realtime & BroadcastChannel
+  // Listen to Supabase Realtime, BroadcastChannel, Tab Focus & Mobile Visibility
   useEffect(() => {
     const unsubscribeBroadcast = storageService.subscribeRealtime((message: RealtimeMessage) => {
       refreshFromStorage();
@@ -224,9 +253,26 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncFromCloud();
     });
 
+    // Auto-sync when switching back to tab or unlocking mobile screen
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncFromCloud();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    // Heartbeat poll every 10 seconds to ensure multi-device sync
+    const pollInterval = setInterval(() => {
+      syncFromCloud();
+    }, 10000);
+
     return () => {
       unsubscribeBroadcast();
       unsubscribeSupabase();
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearInterval(pollInterval);
     };
   }, [refreshFromStorage, syncFromCloud, showToast]);
 
@@ -563,12 +609,12 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>): Promise<Payment> => {
     let newPayment: Payment = {
       ...paymentData,
-      id: `pay-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `pay-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
 
-    // Attempt Supabase Cloud Insert
-    const cloudResult = await supabaseDb.insertPayment(paymentData);
+    // Attempt Supabase Cloud Insert with id
+    const cloudResult = await supabaseDb.insertPayment(newPayment);
     if (cloudResult) {
       newPayment = cloudResult;
     }
@@ -611,12 +657,12 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let newPayments: Payment[] = paymentsData.map((p, idx) => ({
       ...p,
-      id: `pay-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: new Date().toISOString(),
+      id: (p as any).id || `pay-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
+      createdAt: (p as any).createdAt || new Date().toISOString(),
     }));
 
-    // Attempt Cloud Batch Insert
-    const cloudResults = await supabaseDb.insertPaymentsBatch(paymentsData);
+    // Attempt Cloud Batch Insert with newPayments containing valid IDs
+    const cloudResults = await supabaseDb.insertPaymentsBatch(newPayments);
     if (cloudResults && cloudResults.length > 0) {
       newPayments = cloudResults;
     }
@@ -677,11 +723,11 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addExpense = async (expenseData: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense> => {
     let newExpense: Expense = {
       ...expenseData,
-      id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
 
-    const cloudResult = await supabaseDb.insertExpense(expenseData);
+    const cloudResult = await supabaseDb.insertExpense(newExpense);
     if (cloudResult) {
       newExpense = cloudResult;
     }
@@ -705,11 +751,11 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let newExpenses: Expense[] = expensesData.map((e, idx) => ({
       ...e,
-      id: `exp-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: new Date().toISOString(),
+      id: (e as any).id || `exp-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
+      createdAt: (e as any).createdAt || new Date().toISOString(),
     }));
 
-    const cloudResults = await supabaseDb.insertExpensesBatch(expensesData);
+    const cloudResults = await supabaseDb.insertExpensesBatch(newExpenses);
     if (cloudResults && cloudResults.length > 0) {
       newExpenses = cloudResults;
     }
@@ -818,11 +864,11 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addStudent = async (studentData: Omit<Student, 'id' | 'createdAt'>): Promise<Student> => {
     let newStudent: Student = {
       ...studentData,
-      id: `std-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `std-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
 
-    const cloudResult = await supabaseDb.insertStudent(studentData);
+    const cloudResult = await supabaseDb.insertStudent(newStudent);
     if (cloudResult) {
       newStudent = cloudResult;
     }
@@ -845,11 +891,11 @@ export const KasProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let newStudents: Student[] = studentsData.map((s, idx) => ({
       ...s,
-      id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: new Date().toISOString(),
+      id: (s as any).id || `std-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
+      createdAt: (s as any).createdAt || new Date().toISOString(),
     }));
 
-    const cloudResults = await supabaseDb.insertStudentsBatch(studentsData);
+    const cloudResults = await supabaseDb.insertStudentsBatch(newStudents);
     if (cloudResults && cloudResults.length > 0) {
       newStudents = cloudResults;
     }
